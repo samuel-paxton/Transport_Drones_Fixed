@@ -4,10 +4,10 @@ supply_depot.metatable = {__index = supply_depot}
 
 supply_depot.corpse_offsets =
 {
-  [0] = {0, -2},
-  [2] = {2, 0},
-  [4] = {0, 2},
-  [6] = {-2, 0},
+  [defines.direction.north] = {0, -2},
+  [defines.direction.east] = {2, 0},
+  [defines.direction.south] = {0, 2},
+  [defines.direction.west] = {-2, 0},
 }
 
 local get_corpse_position = function(entity)
@@ -24,9 +24,9 @@ function supply_depot.new(entity, tags)
   local force = entity.force
   local surface = entity.surface
   entity.destructible = false
-  entity.minable = false
+  entity.minable_flag = false
   entity.rotatable = false
-  entity.active = false
+  entity.disabled_by_script = true
   local chest = surface.create_entity{name = "supply-depot-chest", position = position, force = force, player = entity.last_user}
 
   local depot =
@@ -93,7 +93,7 @@ function supply_depot:update_contents()
   end
 
   if not new_contents then
-    new_contents = self.entity.get_output_inventory().get_contents()
+    new_contents = util.contents_to_dict(self.entity.get_output_inventory().get_contents())
   end
 
   for name, count in pairs (self.old_contents) do

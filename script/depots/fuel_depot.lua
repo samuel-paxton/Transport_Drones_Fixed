@@ -7,10 +7,10 @@ fuel_depot.metatable = {__index = fuel_depot}
 
 fuel_depot.corpse_offsets =
 {
-  [0] = {0, -3},
-  [2] = {3, 0},
-  [4] = {0, 3},
-  [6] = {-3, 0},
+  [defines.direction.north] = {0, -3},
+  [defines.direction.east] = {3, 0},
+  [defines.direction.south] = {0, 3},
+  [defines.direction.west] = {-3, 0},
 }
 
 local fuel_fluid
@@ -18,7 +18,7 @@ local get_fuel_fluid = function()
   if fuel_fluid then
     return fuel_fluid
   end
-  fuel_fluid = game.recipe_prototypes["fuel-depots"].products[1].name
+  fuel_fluid = prototypes.recipe["fuel-depots"].products[1].name
   return fuel_fluid
 end
 
@@ -36,7 +36,7 @@ function fuel_depot.new(entity, tags)
   local force = entity.force
   local surface = entity.surface
 
-  entity.active = false
+  entity.disabled_by_script = true
   entity.rotatable = false
 
   local depot =
@@ -100,7 +100,7 @@ function fuel_depot:update_circuit_reader()
   if self.circuit_reader and self.circuit_reader.valid then
     local behavior = self.circuit_reader.get_or_create_control_behavior()
     local signal = {signal = {type = "fluid", name = get_fuel_fluid()}, count = self:get_fuel_amount()}
-    behavior.set_signal(1, signal)
+    util.set_combinator_signal(behavior, 1, signal)
   end
 end
 
@@ -129,7 +129,7 @@ function fuel_depot:minimum_request_size()
 end
 
 function fuel_depot:get_drone_inventory()
-  return self.entity.get_inventory(defines.inventory.assembling_machine_input)
+  return self.entity.get_inventory(defines.inventory.crafter_input)
 end
 
 function fuel_depot:remove_drone(drone, remove_item)
@@ -204,8 +204,8 @@ end
 
 function fuel_depot:update_sticker()
 
-  if self.rendering and rendering.is_valid(self.rendering) then
-    rendering.set_text(self.rendering, self:get_active_drone_count().."/"..self:get_drone_item_count())
+  if self.rendering and self.rendering.valid then
+    self.rendering.text = self:get_active_drone_count().."/"..self:get_drone_item_count()
     return
   end
 
@@ -225,7 +225,7 @@ function fuel_depot:update_sticker()
 end
 
 function fuel_depot:remove_fuel(amount)
-  self.entity.remove_fluid({name = get_fuel_fluid(), amount = amount})
+  self.entity.extract_fluid({name = get_fuel_fluid(), amount = amount})
 end
 
 function fuel_depot:on_removed()

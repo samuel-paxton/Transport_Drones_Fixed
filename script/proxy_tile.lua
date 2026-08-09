@@ -7,9 +7,9 @@ local road_tiles
 local get_road_tiles = function()
   if road_tiles then return road_tiles end
   road_tiles = {}
-  local tile_list_item = game.item_prototypes[road_tile_list_name]
-  for tile_name, prototype in pairs (tile_list_item.tile_filters) do
-    road_tiles[tile_name] = true
+  local tile_list_item = prototypes.item[road_tile_list_name]
+  for k, tile_prototype in pairs (tile_list_item.get_tile_filters(defines.selection_mode.select) or {}) do
+    road_tiles[tile_prototype.name] = true
   end
   --game.print(serpent.line(road_tiles))
   return road_tiles

@@ -8,10 +8,10 @@ buffer_depot.metatable = {__index = buffer_depot}
 
 buffer_depot.corpse_offsets =
 {
-  [0] = {0, -2},
-  [2] = {2, 0},
-  [4] = {0, 2},
-  [6] = {-2, 0},
+  [defines.direction.north] = {0, -2},
+  [defines.direction.east] = {2, 0},
+  [defines.direction.south] = {0, 2},
+  [defines.direction.west] = {-2, 0},
 }
 
 buffer_depot.is_buffer_depot = true
@@ -21,7 +21,7 @@ local get_fuel_fluid = function()
   if fuel_fluid then
     return fuel_fluid
   end
-  fuel_fluid = game.recipe_prototypes["fuel-depots"].products[1].name
+  fuel_fluid = prototypes.recipe["fuel-depots"].products[1].name
   return fuel_fluid
 end
 
@@ -45,7 +45,7 @@ function buffer_depot.new(entity, tags)
   local force = entity.force
   local surface = entity.surface
 
-  entity.active = false
+  entity.disabled_by_script = true
   entity.rotatable = false
 
 
@@ -109,7 +109,7 @@ function buffer_depot:save_to_blueprint_tags()
 end
 
 function buffer_depot:remove_fuel(amount)
-  self.entity.remove_fluid({name = get_fuel_fluid(), amount = amount})
+  self.entity.extract_fluid({name = get_fuel_fluid(), amount = amount})
 end
 
 function buffer_depot:check_drone_validity()
@@ -240,7 +240,7 @@ function buffer_depot:update_contents()
     if self.item then
       signal = {signal = {type = self.mode == request_mode.item and "item" or "fluid", name = self.item}, count = self:get_current_amount()}
     end
-    behavior.set_signal(1, signal)
+    util.set_combinator_signal(behavior, 1, signal)
   end
 
 end
@@ -383,7 +383,7 @@ local stack_cache = {}
 local get_stack_size = function(item)
   local size = stack_cache[item]
   if not size then
-    size = game.item_prototypes[item].stack_size
+    size = prototypes.item[item].stack_size
     stack_cache[item] = size
   end
   return size
@@ -411,7 +411,7 @@ function buffer_depot:get_output_inventory()
 end
 
 function buffer_depot:get_drone_inventory()
-  return self.entity.get_inventory(defines.inventory.assembling_machine_input)
+  return self.entity.get_inventory(defines.inventory.crafter_input)
 end
 
 function buffer_depot:get_active_drone_count()
@@ -431,15 +431,19 @@ function buffer_depot:get_drone_item_count()
 end
 
 function buffer_depot:get_output_fluidbox()
-  return self.entity.fluidbox[2]
+  return self.entity.get_fluid_segment_fluid(2)
 end
 
 function buffer_depot:set_output_fluidbox(box)
-  self.entity.fluidbox[2] = box
+  if box then
+    self.entity.set_fluid_segment_fluid(2, box)
+  else
+    self.entity.clear_fluid_segment_fluid(2)
+  end
 end
 
 function buffer_depot:get_temperature()
-  if #self.entity.fluidbox == 2 then
+  if self.entity.has_fluid_segment(2) then
     local box = self:get_output_fluidbox()
     return box and box.temperature
   end
@@ -503,13 +507,13 @@ end
 local min = math.min
 function buffer_depot:give_item(requested_name, requested_count)
 
-  if game.item_prototypes[requested_name] then
+  if prototypes.item[requested_name] then
     local inventory = self.entity.get_output_inventory()
     local removed_count = inventory.remove({name = requested_name, count = requested_count})
     return removed_count
   end
 
-  if game.fluid_prototypes[requested_name] then
+  if prototypes.fluid[requested_name] then
     local box = self:get_output_fluidbox()
     if not box then
       return 0
@@ -536,7 +540,7 @@ local is_valid_item = function(item_name)
   if bool ~= nil then
     return bool
   end
-  valid_item_cache[item_name] = game.item_prototypes[item_name] ~= nil
+  valid_item_cache[item_name] = prototypes.item[item_name] ~= nil
   return valid_item_cache[item_name]
 end
 
@@ -546,7 +550,7 @@ local is_valid_fluid = function(fluid_name)
   if bool ~= nil then
     return bool
   end
-  valid_fluid_cache[fluid_name] = game.fluid_prototypes[fluid_name] ~= nil
+  valid_fluid_cache[fluid_name] = prototypes.fluid[fluid_name] ~= nil
   return valid_fluid_cache[fluid_name]
 end
 
@@ -598,15 +602,15 @@ end
 function buffer_depot:update_sticker()
 
   if not self.item then
-    if self.rendering and rendering.is_valid(self.rendering) then
-      rendering.destroy(self.rendering)
+    if self.rendering and self.rendering.valid then
+      self.rendering.destroy()
       self.rendering = nil
     end
     return
   end
 
-  if self.rendering and rendering.is_valid(self.rendering) then
-    rendering.set_text(self.rendering, self:get_active_drone_count().."/"..self:get_drone_item_count())
+  if self.rendering and self.rendering.valid then
+    self.rendering.text = self:get_active_drone_count().."/"..self:get_drone_item_count()
     return
   end
 

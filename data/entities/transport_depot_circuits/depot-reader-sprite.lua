@@ -21,7 +21,7 @@ return
       },
       {
         draw_as_shadow = true,
-        filename = "__base__/graphics/entity/combinator/hr-constant-combinator-shadow.png",
+        filename = "__base__/graphics/entity/combinator/constant-combinator-shadow.png",
         frame_count = 1,
         height = 66,
         priority = "high",
@@ -58,7 +58,7 @@ return
       },
       {
         draw_as_shadow = true,
-        filename = "__base__/graphics/entity/combinator/hr-constant-combinator-shadow.png",
+        filename = "__base__/graphics/entity/combinator/constant-combinator-shadow.png",
         frame_count = 1,
         height = 66,
         priority = "high",
@@ -95,7 +95,7 @@ return
       },
       {
         draw_as_shadow = true,
-        filename = "__base__/graphics/entity/combinator/hr-constant-combinator-shadow.png",
+        filename = "__base__/graphics/entity/combinator/constant-combinator-shadow.png",
         frame_count = 1,
         height = 66,
         priority = "high",
@@ -132,7 +132,7 @@ return
       },
       {
         draw_as_shadow = true,
-        filename = "__base__/graphics/entity/combinator/hr-constant-combinator-shadow.png",
+        filename = "__base__/graphics/entity/combinator/constant-combinator-shadow.png",
         frame_count = 1,
         height = 66,
         priority = "high",

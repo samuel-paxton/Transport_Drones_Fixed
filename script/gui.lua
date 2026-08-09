@@ -74,7 +74,7 @@ local get_item_icon_and_locale = function(name)
     return cache[name]
   end
 
-  local items = game.item_prototypes
+  local items = prototypes.item
   if items[name] then
     local icon = "item/"..name
     local locale = items[name].localised_name
@@ -83,7 +83,7 @@ local get_item_icon_and_locale = function(name)
     return value
   end
 
-  local fluids = game.fluid_prototypes
+  local fluids = prototypes.fluid
   if fluids[name] then
     local icon = "fluid/"..name
     local locale = fluids[name].localised_name
@@ -100,14 +100,14 @@ local get_signal_id = function(name)
     return signal_cache[name]
   end
 
-  local items = game.item_prototypes
+  local items = prototypes.item
   if items[name] then
     local value = {type = "item", name = name}
     signal_cache[name] = value
     return value
   end
 
-  local fluids = game.fluid_prototypes
+  local fluids = prototypes.fluid
   if fluids[name] then
     local value = {type = "fluid", name = name}
     signal_cache[name] = value

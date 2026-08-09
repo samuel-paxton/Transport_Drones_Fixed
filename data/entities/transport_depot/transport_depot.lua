@@ -1,5 +1,13 @@
+local assembler_pictures = require("__base__.prototypes.entity.assembler-pictures")
+local assembler3pipepictures = assembler_pictures.assembler3pipepictures
+
 local collision_box = {{-1.25, -1.25},{1.25, 1.25}}
 local selection_box = {{-1.5, -1.5}, {1.5, 1.5}}
+
+-- Wider box for depots whose fluid pipe connections poke out beyond the base footprint
+-- (2.0+ requires PipeConnectionDefinition positions to lie inside the entity's collision box)
+local fluid_collision_box = {{-1.25, -2}, {1.25, 2}}
+local fluid_selection_box = {{-1.5, -2}, {1.5, 2}}
 
 local category =
 {
@@ -45,8 +53,8 @@ depot.localised_name = {"request-depot"}
 depot.icon = util.path("data/entities/transport_depot/request-depot-icon.png")
 depot.icon_size = 216
 depot.icon_mipmaps = 0
-depot.collision_box = collision_box
-depot.selection_box = selection_box
+depot.collision_box = fluid_collision_box
+depot.selection_box = fluid_selection_box
 depot.max_health = 150
 depot.fast_replaceable_group = nil
 depot.radius_visualisation_specification =
@@ -59,21 +67,19 @@ depot.fluid_boxes =
 {
   {
     production_type = "input",
-    base_area = 50,
-    base_level = -1,
-    pipe_connections = {{ type="input", position = {0, -2} }},
+    volume = 5000,
+    pipe_connections = {{ flow_direction="input", direction = defines.direction.north, position = {0, -2} }},
   },
   {
     production_type = "output",
-    base_area = 100000,
-    base_level = 1,
-    pipe_connections = {{ type="output", position = {0, 2} }},
+    volume = 10000000,
+    pipe_connections = {{ flow_direction="output", direction = defines.direction.south, position = {0, 2} }},
     pipe_covers = pipecoverspictures(),
-    pipe_picture = assembler3pipepictures(),
+    pipe_picture = assembler3pipepictures,
     secondary_draw_orders = { north = -1, east = -1, west = -1}
   },
-  off_when_no_fluid_recipe = false
 }
+depot.fluid_boxes_off_when_no_fluid_recipe = false
 depot.crafting_categories = {"transport-drone-request"}
 depot.crafting_speed = (1)
 depot.ingredient_count = nil
@@ -81,6 +87,7 @@ depot.ingredient_count = nil
 depot.se_allow_in_space = true
 depot.allowed_effects = {}
 depot.module_specification = nil
+depot.module_slots = 0
 depot.minable = {result = "request-depot", mining_time = 1}
 depot.flags = {"placeable-neutral", "player-creation"}
 depot.next_upgrade = nil
@@ -139,12 +146,11 @@ supply_depot.fluid_boxes =
 {
   {
     production_type = "input",
-    base_area = 50,
-    base_level = -1,
-    pipe_connections = {{ type="input", position = {0, -2} }},
+    volume = 5000,
+    pipe_connections = {{ flow_direction="input", direction = defines.direction.north, position = {0, -2} }},
   },
-  off_when_no_fluid_recipe = false
 }
+supply_depot.fluid_boxes_off_when_no_fluid_recipe = false
 
 
 local supply_base = function(shift)
@@ -214,7 +220,7 @@ local supply_depot_chest =
   flags = {"placeable-neutral", "player-creation", "not-blueprintable"},
   max_health = 150,
   collision_box = collision_box,
-  collision_mask = {},
+  collision_mask = {layers = {}},
   selection_priority = 100,
   fast_replaceable_group = "container",
   scale_info_icons = false,
@@ -267,14 +273,15 @@ local items =
     icon_size = supply_depot_chest.icon_size,
     --category = "transport",
     enabled = false,
+    allow_quality = false,
     ingredients =
     {
-      {"iron-plate", 50},
-      {"iron-gear-wheel", 10},
-      {"iron-stick", 20},
+      {type = "item", name = "iron-plate", amount = 50},
+      {type = "item", name = "iron-gear-wheel", amount = 10},
+      {type = "item", name = "iron-stick", amount = 20},
     },
     energy_required = 5,
-    result = "supply-depot"
+    results = {{type = "item", name = "supply-depot", amount = 1}}
   },
   {
     type = "item",
@@ -296,14 +303,15 @@ local items =
     icon_size = depot.icon_size,
     --category = "transport",
     enabled = false,
+    allow_quality = false,
     ingredients =
     {
-      {"iron-plate", 50},
-      {"iron-gear-wheel", 10},
-      {"iron-stick", 20},
+      {type = "item", name = "iron-plate", amount = 50},
+      {type = "item", name = "iron-gear-wheel", amount = 10},
+      {type = "item", name = "iron-stick", amount = 20},
     },
     energy_required = 5,
-    result = "request-depot"
+    results = {{type = "item", name = "request-depot", amount = 1}}
   }
 }
 
@@ -314,28 +322,25 @@ fuel_depot.name = "fuel-depot"
 fuel_depot.localised_name = {"fuel-depot"}
 fuel_depot.icon = util.path("data/entities/transport_depot/fuel-depot-icon.png")
 fuel_depot.icon_size = 264
-fuel_depot.collision_box = {{-2.25, -2.25},{2.25, 2.25}}
-fuel_depot.selection_box = {{-2.25, -2.25},{2.25, 2.25}}
+fuel_depot.collision_box = {{-2.25, -3},{2.25, 3}}
+fuel_depot.selection_box = {{-2.25, -3},{2.25, 3}}
 fuel_depot.fluid_boxes =
 {
   {
     production_type = "output",
-    base_area = 10,
-    base_level = -1,
-    pipe_connections = {{ type="input-output", position = {0, -3} }},
+    volume = 1000,
+    pipe_connections = {{ flow_direction="input-output", direction = defines.direction.north, position = {0, -3} }},
   },
   {
     production_type = "input",
-    base_area = 10,
-    base_level = -1,
-    height = 1,
-    pipe_connections = {{ type="input-output", position = {0, 3} }},
+    volume = 1000,
+    pipe_connections = {{ flow_direction="input-output", direction = defines.direction.south, position = {0, 3} }},
     pipe_covers = pipecoverspictures(),
-    pipe_picture = assembler3pipepictures(),
+    pipe_picture = assembler3pipepictures,
     secondary_draw_orders = { north = -1, east = -1, west = -1}
   },
-  off_when_no_fluid_recipe = false
 }
+fuel_depot.fluid_boxes_off_when_no_fluid_recipe = false
 
 local fuel_base = function(shift)
   return
@@ -403,14 +408,15 @@ local fuel_depot_items =
     icon_size = fuel_depot.icon_size,
     --category = "transport",
     enabled = false,
+    allow_quality = false,
     ingredients =
     {
-      {"steel-plate", 10},
-      {"iron-plate", 20},
-      {"iron-gear-wheel", 5},
+      {type = "item", name = "steel-plate", amount = 10},
+      {type = "item", name = "iron-plate", amount = 20},
+      {type = "item", name = "iron-gear-wheel", amount = 5},
     },
     energy_required = 10,
-    result = "fuel-depot"
+    results = {{type = "item", name = "fuel-depot", amount = 1}}
   }
 }
 
@@ -460,8 +466,8 @@ local fluid_supply_depot = util.copy(fuel_depot)
 fluid_supply_depot.localised_name = {"fluid-depot"}
 fluid_supply_depot.icon = util.path("data/entities/transport_depot/fluid-depot-icon.png")
 fluid_supply_depot.icon_size = 144
-fluid_supply_depot.collision_box = collision_box
-fluid_supply_depot.selection_box = selection_box
+fluid_supply_depot.collision_box = fluid_collision_box
+fluid_supply_depot.selection_box = fluid_selection_box
 fluid_supply_depot.name = "fluid-depot"
 fluid_supply_depot.type = "furnace"
 fluid_supply_depot.crafting_categories = {"transport-fluid-request"}
@@ -476,22 +482,19 @@ fluid_supply_depot.fluid_boxes =
 {
   {
     production_type = "output",
-    base_area = 10,
-    base_level = -1,
-    pipe_connections = {{ type="input-output", position = {0, -2} }},
+    volume = 1000,
+    pipe_connections = {{ flow_direction="input-output", direction = defines.direction.north, position = {0, -2} }},
   },
   {
     production_type = "input",
-    base_area = 200,
-    base_level = -1,
-    height = 1,
-    pipe_connections = {{ type="input-output", position = {0, 2} }},
+    volume = 20000,
+    pipe_connections = {{ flow_direction="input-output", direction = defines.direction.south, position = {0, 2} }},
     pipe_covers = pipecoverspictures(),
-    pipe_picture = assembler3pipepictures(),
+    pipe_picture = assembler3pipepictures,
     secondary_draw_orders = { north = -1, east = -1, west = -1}
   },
-  off_when_no_fluid_recipe = false
 }
+fluid_supply_depot.fluid_boxes_off_when_no_fluid_recipe = false
 
 local fluid_base = function(shift)
   return
@@ -565,14 +568,15 @@ local fluid_depot_items =
     icon_size = fluid_supply_depot.icon_size,
     --category = "transport",
     enabled = false,
+    allow_quality = false,
     ingredients =
     {
-      {"iron-plate", 50},
-      {"iron-gear-wheel", 10},
-      {"iron-stick", 20},
+      {type = "item", name = "iron-plate", amount = 50},
+      {type = "item", name = "iron-gear-wheel", amount = 10},
+      {type = "item", name = "iron-stick", amount = 20},
     },
     energy_required = 5,
-    result = "fluid-depot"
+    results = {{type = "item", name = "fluid-depot", amount = 1}}
   }
 }
 
@@ -663,14 +667,15 @@ local buffer_depot_items =
     icon_size = buffer_depot.icon_size,
     --category = "transport",
     enabled = false,
+    allow_quality = false,
     ingredients =
     {
-      {"iron-plate", 50},
-      {"iron-gear-wheel", 10},
-      {"iron-stick", 20},
+      {type = "item", name = "iron-plate", amount = 50},
+      {type = "item", name = "iron-gear-wheel", amount = 10},
+      {type = "item", name = "iron-stick", amount = 20},
     },
     energy_required = 5,
-    result = "buffer-depot"
+    results = {{type = "item", name = "buffer-depot", amount = 1}}
   }
 }
 
@@ -713,13 +718,14 @@ local reader_recipe =
   icon = reader.icon,
   icon_size = reader.icon_size,
   enabled = false,
+  allow_quality = false,
   ingredients =
   {
-    {"copper-cable", 5},
-    {"electronic-circuit", 10},
+    {type = "item", name = "copper-cable", amount = 5},
+    {type = "item", name = "electronic-circuit", amount = 10},
   },
   energy_required = 5,
-  result = "road-network-reader"
+  results = {{type = "item", name = "road-network-reader", amount = 1}}
 }
 
 data:extend

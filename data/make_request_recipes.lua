@@ -41,7 +41,7 @@ local make_recipe = function(item)
   if not item.name then
     return
   end
-  if util.has_flag(item, "hidden") then return end
+  if item.hidden or util.has_flag(item, "hidden") then return end
   local max_stack = 65000
   if util.has_flag(item, "not-stackable") or item.type == "armor" then
     max_stack = 1
@@ -68,7 +68,7 @@ local make_recipe = function(item)
       {type = "item", name = item.name, amount = max_stack, show_details_in_recipe_tooltip = false},
       {type = "item", name = item.name, amount = max_stack, show_details_in_recipe_tooltip = false},
     },
-    category = category,
+    categories = {category},
     order = item.order,
     subgroup = get_subgroup(item),
     overload_multiplier = 100,
@@ -78,6 +78,7 @@ local make_recipe = function(item)
     allow_as_intermediate = false,
     allow_intermediates = true,
     allow_inserter_overload = false,
+    allow_quality = false,
     energy_required = 2 ^ 50
   }
   data:extend{recipe}
@@ -108,7 +109,7 @@ local make_fluid_depot_recipe = function(fluid)
       results =
       {
       },
-      category = "transport-fluid-request",
+      categories = {"transport-fluid-request"},
       order = fluid.order,
       subgroup = fluid.subgroup or "fluid", --get_subgroup(item),
       overload_multiplier = 1,
@@ -117,6 +118,7 @@ local make_fluid_depot_recipe = function(fluid)
       allow_decomposition = false,
       allow_as_intermediate = false,
       allow_intermediates = false,
+      allow_quality = false,
       enabled = true,
       energy_required = 2 ^ 50
     }
@@ -141,7 +143,7 @@ local make_fluid_request_recipe = function(fluid)
     {
       {type = "fluid", name = fluid.name, amount = 1000000, show_details_in_recipe_tooltip = false}
     },
-    category = category,
+    categories = {category},
     order = fluid.order,
     subgroup = fluid.subgroup or "fluid",
     overload_multiplier = 200,
@@ -150,6 +152,7 @@ local make_fluid_request_recipe = function(fluid)
     allow_decomposition = false,
     allow_as_intermediate = false,
     allow_intermediates = false,
+    allow_quality = false,
     energy_required = 2 ^ 50
   }
   data:extend{recipe}
@@ -165,7 +168,6 @@ local fuel_recipe =
   type = "recipe",
   name = "fuel-depots",
   localised_name = {"fuel-depots"},
-  flags = {"hidden"},
   icon = util.path("data/entities/transport_depot/fuel-recipe-icon.png"),
   icon_size = 64,
   --category = "transport",
@@ -176,13 +178,14 @@ local fuel_recipe =
     {type = "fluid", name = fuel, amount = 5000}
   },
   overload_multipler = 50,
+  allow_quality = false,
   energy_required = 5,
   results =
   {
     {type = "fluid", name = fuel, amount = 10}
   },
   subgroup = "other",
-  category = "fuel-depot",
+  categories = {"fuel-depot"},
   hidden = true
 }
 

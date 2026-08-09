@@ -57,6 +57,37 @@ end
 
 util.copy = util.table.deepcopy
 
+-- LuaInventory::get_contents() now returns an array of {name=, count=, quality=} rather than
+-- a name -> count dictionary. This mod doesn't track quality (everything it makes/moves is
+-- always normal quality - see the recipes' allow_quality = false), so just collapse by name.
+util.contents_to_dict = function(contents)
+  local dict = {}
+  for k, item in pairs (contents) do
+    dict[item.name] = (dict[item.name] or 0) + item.count
+  end
+  return dict
+end
+
+-- Constant combinators no longer expose get_signal/set_signal - signals now live in
+-- "logistic sections" of slots. These helpers keep the old {signal = {type=, name=}, count=} shape
+-- used throughout this mod so callers barely have to change.
+util.get_combinator_signal = function(behavior, slot)
+  local section = behavior.get_section(1)
+  if not section then return {count = 0} end
+  local filter = section.get_slot(slot)
+  if not filter or not filter.value then return {count = 0} end
+  return {signal = {type = filter.value.type, name = filter.value.name}, count = filter.min or 0}
+end
+
+util.set_combinator_signal = function(behavior, slot, signal)
+  local section = behavior.get_section(1) or behavior.add_section()
+  if not (signal and signal.signal and signal.signal.name) then
+    section.clear_slot(slot)
+    return
+  end
+  section.set_slot(slot, {value = {type = signal.signal.type or "item", name = signal.signal.name}, min = signal.count or 0})
+end
+
 util.first_key = function(map)
   local k, v = next(map)
   return k

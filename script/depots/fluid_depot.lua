@@ -3,10 +3,10 @@ local fluid_depot = {}
 fluid_depot.metatable = {__index = fluid_depot}
 fluid_depot.corpse_offsets =
 {
-  [0] = {0, -2},
-  [2] = {2, 0},
-  [4] = {0, 2},
-  [6] = {-2, 0},
+  [defines.direction.north] = {0, -2},
+  [defines.direction.east] = {2, 0},
+  [defines.direction.south] = {0, 2},
+  [defines.direction.west] = {-2, 0},
 }
 
 local get_corpse_position = function(entity)
@@ -58,7 +58,7 @@ function fluid_depot:get_to_be_taken(name)
 end
 
 function fluid_depot:get_output_fluidbox()
-  return self.entity.fluidbox[1]
+  return self.entity.get_fluid_segment_fluid(1)
 end
 
 function fluid_depot:get_temperature()
@@ -67,7 +67,11 @@ function fluid_depot:get_temperature()
 end
 
 function fluid_depot:set_output_fluidbox(box)
-  self.entity.fluidbox[1] = box
+  if box then
+    self.entity.set_fluid_segment_fluid(1, box)
+  else
+    self.entity.clear_fluid_segment_fluid(1)
+  end
 end
 
 
@@ -132,7 +136,7 @@ function fluid_depot:update_contents()
     if name and count and count > 0 then
       signal = {signal = {type = "fluid", name = name}, count = count}
     end
-    behavior.set_signal(1, signal)
+    util.set_combinator_signal(behavior, 1, signal)
   end
 
 end
@@ -143,14 +147,14 @@ function fluid_depot:update()
   local box = self:get_output_fluidbox()
   if not box then
     if not self.entity.active then
-      self.entity.active = true
+      self.entity.disabled_by_script = false
       self.entity.crafting_progress = 0
     end
     return
   end
 
   if self.entity.active then
-    self.entity.active = false
+    self.entity.disabled_by_script = true
   end
 
   self:update_contents()
@@ -163,7 +167,7 @@ function fluid_depot:say(string)
 end
 
 function fluid_depot:give_item(requested_name, requested_count)
-  return self.entity.remove_fluid{name = requested_name, amount = requested_count}
+  return self.entity.extract_fluid{name = requested_name, amount = requested_count}
 end
 
 function fluid_depot:add_to_be_taken(name, count)

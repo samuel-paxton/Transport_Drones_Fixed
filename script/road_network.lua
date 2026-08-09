@@ -523,10 +523,10 @@ end
 local floor = math.floor
 
 local get_tiles = function()
-  local mask = game.tile_prototypes["transport-drone-road"].collision_mask
+  local mask = prototypes.tile["transport-drone-road"].collision_mask.layers
   local tiles = {}
-  for name, tile in pairs (game.tile_prototypes) do
-    local tile_mask = tile.collision_mask or {}
+  for name, tile in pairs (prototypes.tile) do
+    local tile_mask = (tile.collision_mask and tile.collision_mask.layers) or {}
     if table_size(tile_mask) == table_size(mask) then
       local good = true
       for layer, bool in pairs (mask) do
@@ -620,11 +620,11 @@ road_network.check_clear_lonely_node = function(surface, x, y)
 end
 
 road_network.on_init = function()
-  global.road_network = global.road_network or script_data
+  storage.road_network = storage.road_network or script_data
 end
 
 road_network.on_load = function()
-  script_data = global.road_network or script_data
+  script_data = storage.road_network or script_data
 end
 
 road_network.on_configuration_changed = function()

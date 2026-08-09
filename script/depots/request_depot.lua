@@ -6,16 +6,16 @@ request_depot.metatable = {__index = request_depot}
 
 request_depot.corpse_offsets =
 {
-  [0] = {0, -2},
-  [2] = {2, 0},
-  [4] = {0, 2},
-  [6] = {-2, 0},
+  [defines.direction.north] = {0, -2},
+  [defines.direction.east] = {2, 0},
+  [defines.direction.south] = {0, 2},
+  [defines.direction.west] = {-2, 0},
 }
 
 local fuel_fluid
 local get_fuel_fluid = function()
   if not fuel_fluid then
-    fuel_fluid = game.recipe_prototypes["fuel-depots"].products[1].name
+    fuel_fluid = prototypes.recipe["fuel-depots"].products[1].name
   end
   return fuel_fluid
 end
@@ -40,7 +40,7 @@ function request_depot.new(entity, tags)
   local force = entity.force
   local surface = entity.surface
 
-  entity.active = false
+  entity.disabled_by_script = true
   entity.rotatable = false
 
   local depot =
@@ -102,7 +102,7 @@ function request_depot:save_to_blueprint_tags()
 end
 
 function request_depot:remove_fuel(amount)
-  self.entity.remove_fluid({name = get_fuel_fluid(), amount = amount})
+  self.entity.extract_fluid({name = get_fuel_fluid(), amount = amount})
 end
 
 function request_depot:check_drone_validity()
@@ -273,12 +273,12 @@ function request_depot:update_circuit_reader()
     if self.item then
       signal = {signal = {type = self.mode == request_mode.item and "item" or "fluid", name = self.item}, count = self:get_current_amount()}
     end
-    behavior.set_signal(1, signal)
+    util.set_combinator_signal(behavior, 1, signal)
     local drone_signal
     if self.item then
       drone_signal = {signal = {type = "virtual", name = "signal-D"}, count = self:get_drone_item_count()}
     end
-    behavior.set_signal(2, drone_signal)
+    util.set_combinator_signal(behavior, 2, drone_signal)
   end
 end
 
@@ -355,7 +355,7 @@ local stack_cache = {}
 local get_stack_size = function(item)
   local size = stack_cache[item]
   if not size then
-    local prototype = game.item_prototypes[item]
+    local prototype = prototypes.item[item]
     if not prototype then error("what? "..item) end
     size = prototype.stack_size
     stack_cache[item] = size
@@ -390,7 +390,7 @@ end
 
 function request_depot:get_drone_inventory()
   if not self.drone_inventory then
-    self.drone_inventory = self.entity.get_inventory(defines.inventory.assembling_machine_input)
+    self.drone_inventory = self.entity.get_inventory(defines.inventory.crafter_input)
                     end
   return self.drone_inventory
   --return self.entity.get_inventory(defines.inventory.assembling_machine_input)
@@ -413,11 +413,15 @@ function request_depot:get_drone_item_count()
 end
 
 function request_depot:get_output_fluidbox()
-  return self.entity.fluidbox[2]
+  return self.entity.get_fluid_segment_fluid(2)
 end
 
 function request_depot:set_output_fluidbox(box)
-  self.entity.fluidbox[2] = box
+  if box then
+    self.entity.set_fluid_segment_fluid(2, box)
+  else
+    self.entity.clear_fluid_segment_fluid(2)
+  end
 end
 
 function request_depot:get_current_amount()
@@ -517,7 +521,7 @@ local is_valid_item = function(item_name)
   if bool ~= nil then
     return bool
   end
-  valid_item_cache[item_name] = game.item_prototypes[item_name] ~= nil
+  valid_item_cache[item_name] = prototypes.item[item_name] ~= nil
   return valid_item_cache[item_name]
 end
 
@@ -527,7 +531,7 @@ local is_valid_fluid = function(fluid_name)
   if bool ~= nil then
     return bool
   end
-  valid_fluid_cache[fluid_name] = game.fluid_prototypes[fluid_name] ~= nil
+  valid_fluid_cache[fluid_name] = prototypes.fluid[fluid_name] ~= nil
   return valid_fluid_cache[fluid_name]
 end
 
@@ -565,15 +569,15 @@ end
 function request_depot:update_sticker()
 
   if not self.item then
-    if self.rendering and rendering.is_valid(self.rendering) then
-      rendering.destroy(self.rendering)
+    if self.rendering and self.rendering.valid then
+      self.rendering.destroy()
       self.rendering = nil
     end
     return
   end
 
-  if self.rendering and rendering.is_valid(self.rendering) then
-    rendering.set_text(self.rendering, self:get_active_drone_count().."/"..self:get_drone_item_count())
+  if self.rendering and self.rendering.valid then
+    self.rendering.text = self:get_active_drone_count().."/"..self:get_drone_item_count()
     return
   end
 
@@ -614,4 +618,4 @@ function request_depot:on_config_changed()
   self.fuel_on_the_way = self.fuel_on_the_way or 0
 end
 
-return request_depot
+return request_depot

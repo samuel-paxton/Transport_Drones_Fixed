@@ -3,10 +3,10 @@ mining_depot.metatable = {__index = mining_depot}
 
 mining_depot.corpse_offsets =
 {
-  [0] = {0, 4.5},
-  [2] = {-4.5, 0},
-  [4] = {0, -4.5},
-  [6] = {4.5, 0},
+  [defines.direction.north] = {0, 4.5},
+  [defines.direction.east] = {-4.5, 0},
+  [defines.direction.south] = {0, -4.5},
+  [defines.direction.west] = {4.5, 0},
 }
 
 local get_corpse_position = function(entity)
@@ -23,7 +23,7 @@ function mining_depot.new(entity)
   local force = entity.force
   local surface = entity.surface
 
-  entity.active = false
+  entity.disabled_by_script = true
   entity.rotatable = false
 
 
@@ -70,7 +70,7 @@ function mining_depot:update_contents()
     end
   end
   if not new_contents then
-    new_contents = self.entity.get_output_inventory().get_contents()
+    new_contents = util.contents_to_dict(self.entity.get_output_inventory().get_contents())
   end
 
   for name, count in pairs (self.old_contents) do
@@ -100,12 +100,12 @@ function mining_depot:update_contents()
 
   if self.circuit_reader and self.circuit_reader.valid then
     local behavior = self.circuit_reader.get_or_create_control_behavior()
-    local name, count = next(new_contents) or next(self.entity.get_output_inventory().get_contents())
+    local name, count = next(new_contents) or next(util.contents_to_dict(self.entity.get_output_inventory().get_contents()))
     local signal
     if name and count and count > 0 then
       signal = {signal = {type = "item", name = name}, count = count}
     end
-    behavior.set_signal(1, signal)
+    util.set_combinator_signal(behavior, 1, signal)
   end
 
 end

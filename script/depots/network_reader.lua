@@ -3,10 +3,10 @@ local network_reader = {}
 network_reader.metatable = {__index = network_reader}
 network_reader.corpse_offsets =
 {
-  [0] = {0, 1},
-  [2] = {-1, 0},
-  [4] = {0, -1},
-  [6] = {1, 0},
+  [defines.direction.north] = {0, 1},
+  [defines.direction.east] = {-1, 0},
+  [defines.direction.south] = {0, -1},
+  [defines.direction.west] = {1, 0},
 }
 
 local get_corpse_position = function(entity)
@@ -71,7 +71,7 @@ function network_reader:update()
   local behavior = self.entity.get_control_behavior()
   if not behavior then return end
 
-  local signal = behavior.get_signal(1)
+  local signal = util.get_combinator_signal(behavior, 1)
   local name = signal.signal and signal.signal.name
   if not name then return end
 
@@ -87,7 +87,7 @@ function network_reader:update()
   end
 
   signal.count = sum
-  behavior.set_signal(1, signal)
+  util.set_combinator_signal(behavior, 1, signal)
 
 end
 

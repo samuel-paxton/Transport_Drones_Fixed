@@ -5,12 +5,10 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "type": "factoriomod",
+      "type": "factorio",
       "request": "launch",
       "name": "Factorio Mod Debug",
-      "factorioPath": "C:/factorio/bin/Releasex64vs2017/factorio-run.exe"
-
-
+      "factorioPath": "C:/factorio/bin/fetched/factorio.exe"
     }
   ]
 }

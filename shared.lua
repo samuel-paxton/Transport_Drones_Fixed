@@ -2,9 +2,9 @@
 
 local data = {}
 
-data.drone_collision_mask = {"poop your pants"}
---data.drone_collision_mask = {"ground-tile", "water-tile", "not-colliding-with-itself", "colliding-with-tiles-only"}
---data.drone_collision_mask = {"ground-tile", "water-tile"}
+data.drone_collision_mask = {layers = {}} -- overwritten in data-final-fixes.lua
+--data.drone_collision_mask = {layers = {ground_tile = true, water_tile = true}, not_colliding_with_itself = true, colliding_with_tiles_only = true}
+--data.drone_collision_mask = {layers = {ground_tile = true, water_tile = true}}
 data.variation_count = 50
 data.special_variation_count = 10
 data.transport_speed_technology = "transport-drone-speed"

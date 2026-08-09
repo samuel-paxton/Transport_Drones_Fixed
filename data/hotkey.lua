@@ -5,7 +5,7 @@ local hotkeys =
     name = "follow-drone",
     localised_named = {"follow-drone"},
     linked_game_control = "toggle-driving",
-    key_sequence = "return",
+    key_sequence = "ENTER",
     enabled_while_in_cutscene = true
   },
   {
