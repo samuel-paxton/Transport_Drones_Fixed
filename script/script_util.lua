@@ -57,6 +57,33 @@ end
 
 util.copy = util.table.deepcopy
 
+-- get/set_fluid_segment_fluid require the fluid storage to already have an established "fluid
+-- segment" (a connected pipe network, or something previously flowed through it) and error
+-- otherwise ("Fluid storage at the given index does not have a fluid segment."). This mod's
+-- depots use fluid boxes as plain script-controlled storage that's often never pipe-connected,
+-- so read/write them through add_fluid/remove_fluid/clear_fluid instead, which work regardless.
+--
+-- On top of that, a crafting machine's fluid box *indices* now depend on which fluid
+-- ingredients/products the currently set recipe actually has - an index that's valid with one
+-- recipe set can simply not exist with another (e.g. an item-only recipe may leave only 1 fluid
+-- box addressable even though the prototype defines 2), and touching a nonexistent index throws
+-- rather than returning nil/false. Every call here is pcall-guarded for that reason.
+util.get_fluid_box_content = function(entity, index)
+  local ok, capacity = pcall(entity.get_fluid_capacity, index)
+  if not (ok and capacity and capacity > 0) then return end
+  local ok2, fluid = pcall(entity.remove_fluid, index, capacity)
+  if not (ok2 and fluid) then return end
+  pcall(entity.add_fluid, index, fluid)
+  return fluid
+end
+
+util.set_fluid_box_content = function(entity, index, fluid)
+  pcall(entity.clear_fluid, index)
+  if fluid and fluid.name then
+    pcall(entity.add_fluid, index, fluid)
+  end
+end
+
 -- LuaInventory::get_contents() now returns an array of {name=, count=, quality=} rather than
 -- a name -> count dictionary. This mod doesn't track quality (everything it makes/moves is
 -- always normal quality - see the recipes' allow_quality = false), so just collapse by name.

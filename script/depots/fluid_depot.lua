@@ -58,7 +58,11 @@ function fluid_depot:get_to_be_taken(name)
 end
 
 function fluid_depot:get_output_fluidbox()
-  return self.entity.get_fluid_segment_fluid(1)
+  local ok, has_segment = pcall(self.entity.has_fluid_segment, 1)
+  if not (ok and has_segment) then return end
+  local ok2, fluid = pcall(self.entity.get_fluid_segment_fluid, 1)
+  if not ok2 then return end
+  return fluid
 end
 
 function fluid_depot:get_temperature()
@@ -67,11 +71,7 @@ function fluid_depot:get_temperature()
 end
 
 function fluid_depot:set_output_fluidbox(box)
-  if box then
-    self.entity.set_fluid_segment_fluid(1, box)
-  else
-    self.entity.clear_fluid_segment_fluid(1)
-  end
+  util.set_fluid_box_content(self.entity, 1, box)
 end
 
 

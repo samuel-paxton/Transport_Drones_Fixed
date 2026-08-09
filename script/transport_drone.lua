@@ -122,7 +122,10 @@ transport_drone.new = function(request_depot, drone_name)
   end
 
   local entity = request_depot.entity.surface.create_entity{name = get_drone_name(drone_name), position = corpse.position, force = request_depot.entity.force}
-  if not (entity and entity.valid) then return end
+  if not (entity and entity.valid) then
+    log("transport_drone.new: failed to create '"..get_drone_name(drone_name).."' at "..serpent.line(corpse.position))
+    return
+  end
 
   local drone =
   {
@@ -544,7 +547,7 @@ end
 local random = math.random
 function transport_drone:wait_for_reorder()
   self.state = states.waiting_for_reorder
-  self.entity.set_command
+  self.entity.commandable.set_command
   {
     type = defines.command.stop,
     ticks_to_wait = random(20, 30),
@@ -557,10 +560,10 @@ function transport_drone:refund_fuel()
   local consumption = age * self.entity.speed * fuel_consumption_per_meter
 
   local pollution = (age / 60) * drone_pollution_per_second
-  game.get_pollution_statistics().on_flow("transport-drone-1", pollution)
+  game.get_pollution_statistics(self.entity.surface).on_flow("transport-drone-1", pollution)
 
   --self:say(consumption)
-  self.entity.force.get_fluid_production_statistics().on_flow(get_fuel_fluid(), -consumption)
+  self.entity.force.get_fluid_production_statistics(self.entity.surface).on_flow(get_fuel_fluid(), -consumption)
   local fuel_refund = fuel_amount_per_drone - consumption
   --self:say(fuel_refund)
 
@@ -615,7 +618,7 @@ function transport_drone:say(text)
 end
 
 function transport_drone:go_to_position(position, radius)
-  self.entity.set_command
+  self.entity.commandable.set_command
   {
     type = defines.command.go_to_location,
     destination = position,
@@ -626,7 +629,7 @@ function transport_drone:go_to_position(position, radius)
 end
 
 function transport_drone:go_to_entity(entity, radius)
-  self.entity.set_command
+  self.entity.commandable.set_command
   {
     type = defines.command.go_to_location,
     destination_entity = entity,
@@ -686,7 +689,7 @@ function transport_drone:go_to_depot(depot, radius, sprite_switch)
     ticks_to_wait = 15
   })
 
-  self.entity.set_command
+  self.entity.commandable.set_command
   {
     type = defines.command.compound,
     distraction = defines.distraction.none,
@@ -738,8 +741,8 @@ local on_entity_removed = function(event)
   if not drone then return end
 
   if event.force then
-    entity.force.get_kill_count_statistics().on_flow("transport-drone-1", 1)
-    event.force.get_kill_count_statistics().on_flow("transport-drone-1", -1)
+    entity.force.get_kill_count_statistics(entity.surface).on_flow("transport-drone-1", 1)
+    event.force.get_kill_count_statistics(entity.surface).on_flow("transport-drone-1", -1)
   end
 
   drone:handle_drone_deletion()

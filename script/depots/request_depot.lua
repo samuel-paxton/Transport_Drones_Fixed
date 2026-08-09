@@ -413,15 +413,11 @@ function request_depot:get_drone_item_count()
 end
 
 function request_depot:get_output_fluidbox()
-  return self.entity.get_fluid_segment_fluid(2)
+  return util.get_fluid_box_content(self.entity, 2)
 end
 
 function request_depot:set_output_fluidbox(box)
-  if box then
-    self.entity.set_fluid_segment_fluid(2, box)
-  else
-    self.entity.clear_fluid_segment_fluid(2)
-  end
+  util.set_fluid_box_content(self.entity, 2, box)
 end
 
 function request_depot:get_current_amount()
