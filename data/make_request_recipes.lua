@@ -55,7 +55,10 @@ local make_recipe = function(item)
     icons = item.icons,
     ingredients =
     {
-      {type = "item", name = "transport-drone", amount = 1},
+      -- The drone consumed to run this request is always normal quality (a drone doesn't get
+      -- "better" at flying by being epic) regardless of which quality the recipe/output is set
+      -- to - quality_min/quality_max pin it independently of the recipe's own quality selection.
+      {type = "item", name = "transport-drone", amount = 1, quality_min = "normal", quality_max = "normal"},
       {type = "fluid", name = fuel, amount = 5000}
     },
     results =
@@ -78,7 +81,9 @@ local make_recipe = function(item)
     allow_as_intermediate = false,
     allow_intermediates = true,
     allow_inserter_overload = false,
-    allow_quality = false,
+    -- The requested item's quality is exactly what the player picks here - the network will
+    -- look for a supply of the matching quality.
+    allow_quality = true,
     energy_required = 2 ^ 50
   }
   data:extend{recipe}
@@ -152,6 +157,8 @@ local make_fluid_request_recipe = function(fluid)
     allow_decomposition = false,
     allow_as_intermediate = false,
     allow_intermediates = false,
+    -- Fluids don't have quality, so there's nothing for a quality selector to do here; this also
+    -- keeps the drone ingredient pinned to normal quality (same as the item requests above).
     allow_quality = false,
     energy_required = 2 ^ 50
   }

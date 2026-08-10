@@ -116,52 +116,55 @@ local get_signal_id = function(name)
 
 end
 
+-- network.item_supply and depot.old_contents are indexed [quality][name] = ... ; GUI element
+-- names have to be flat unique strings, so (quality, name) pairs get joined with "/" (the same
+-- separator already used to encode sprite paths elsewhere in this file). Item/fluid/quality
+-- prototype names never contain "/", so this can't collide.
+local quality_item_key = function(quality, name)
+  return quality.."/"..name
+end
+
 local floor = math.floor
 local update_contents_table = function(contents_table, network, filter, sort)
 
-  local supply = network.item_supply
-
-  if sort then
-    local sorted_supply = {}
-    local k = 1
-    for name, counts in pairs(supply) do
+  local entries = {}
+  local k = 1
+  for quality, by_name in pairs (network.item_supply) do
+    for name, counts in pairs (by_name) do
       local sum = 0
       for depot_id, count in pairs (counts) do
         sum = sum + count
       end
-      sorted_supply[k] = {name, sum, counts}
+      entries[k] = {quality, name, sum}
       k = k + 1
-    end
-    table.sort(sorted_supply, function(a, b) return a[2] > b[2] end)
-    supply  = {}
-    for k = 1, #sorted_supply do
-      local entry = sorted_supply[k]
-      supply[entry[1]] = entry[3]
     end
   end
 
+  if sort then
+    table.sort(entries, function(a, b) return a[3] > b[3] end)
+  end
 
-  for name, counts in pairs (supply) do
+  local seen = {}
+  for i = 1, #entries do
+    local quality, name, sum = entries[i][1], entries[i][2], entries[i][3]
     local item_locale = get_item_icon_and_locale(name)
 
     if item_locale then
-      local visible = (not filter or filter.name == name)
-      local flow = contents_table[name]
+      local key = quality_item_key(quality, name)
+      seen[key] = true
+      local visible = (not filter) or (filter.name == name and (filter.quality or util.normal_quality) == quality)
+      local flow = contents_table[key]
       if visible then
-        local sum = 0
-        for depot_id, count in pairs (counts) do
-          sum = sum + count
-        end
-
         sum = floor(sum)
 
         if sum > 0 then
           if not flow then
-            flow = contents_table.add{type = "flow", name = name}
+            flow = contents_table.add{type = "flow", name = key}
             flow.add
             {
               type = "sprite-button",
               sprite = item_locale.icon,
+              quality = quality,
               number = sum,
               style = "transparent_slot",
               name = "count",
@@ -180,7 +183,7 @@ local update_contents_table = function(contents_table, network, filter, sort)
     end
   end
   for k, gui in pairs (contents_table.children) do
-    if not network.item_supply[gui.name] then gui.destroy() end
+    if not seen[gui.name] then gui.destroy() end
   end
 end
 
@@ -210,18 +213,22 @@ end
 
 local update_contents = function(gui, contents)
 
-  for name, count in pairs (contents) do
+  local seen = {}
+  util.for_each_quality_item(contents, function(quality, name, count)
     local item_locale = get_item_icon_and_locale(name)
     if item_locale then
-      local button = gui[name]
+      local key = quality_item_key(quality, name)
+      seen[key] = true
+      local button = gui[key]
       if not button then
         button = gui.add
         {
           type = "sprite-button",
           sprite = item_locale.icon,
+          quality = quality,
           number = count,
           style = "transparent_slot",
-          name = name,
+          name = key,
           tooltip = count
         }
       else
@@ -229,10 +236,10 @@ local update_contents = function(gui, contents)
         button.tooltip = count
       end
     end
-  end
+  end)
 
   for k, element in pairs (gui.children) do
-    if not contents[element.name] then
+    if not seen[element.name] then
       element.destroy()
     end
   end
@@ -277,7 +284,7 @@ local update_supply_depot_gui = function(depot, gui, filter)
   if not holding_table then
     holding_table = gui.add{type = "table", column_count = 5, name = "table"}
   end
-  local visible = (not filter) or depot.old_contents[filter.name]
+  local visible = (not filter) or util.get_quality_item(depot.old_contents, filter.quality or util.normal_quality, filter.name)
   if visible then
     update_contents(holding_table, depot.old_contents)
   end
@@ -492,7 +499,7 @@ local update_request_depot_gui = function(depot, gui, filter)
   end
 
   local item = depot.item
-  local visible = (not filter) or filter.name == item
+  local visible = (not filter) or (filter.name == item and (filter.quality or util.normal_quality) == depot.quality)
   gui.visible = visible
 
   if not visible then return end
@@ -526,6 +533,7 @@ local update_request_depot_gui = function(depot, gui, filter)
         {
           type = "sprite-button",
           sprite = item_locale.icon,
+          quality = depot.quality,
           number = current_count,
           tooltip = current_count,
           style = "transparent_slot",
@@ -550,6 +558,7 @@ local update_request_depot_gui = function(depot, gui, filter)
         {
           type = "sprite-button",
           sprite = item_locale.icon,
+          quality = depot.quality,
           number = current_count,
           tooltip = requested_count,
           style = "transparent_slot",
@@ -830,7 +839,8 @@ local on_gui_click = function(event)
     local sprite = gui.sprite
     if sprite and sprite ~= "" then
       local result = split(sprite)
-      local signal = {type = result[1], name = result[2]}
+      local quality = gui.quality
+      local signal = {type = result[1], name = result[2], quality = quality and quality.name}
       set_filter_value(player, signal)
       refresh_gui(player, true)
       return

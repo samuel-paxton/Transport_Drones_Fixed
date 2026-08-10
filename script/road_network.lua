@@ -295,14 +295,18 @@ end
 
 local road_network = {}
 
+-- network.item_supply is indexed [quality][name][depot_index] = count - quality first, since
+-- normal quality is the overwhelmingly common case and this keeps that a single sub-table
+-- lookup rather than something every name lookup has to unpack.
 road_network.get_network_item_supply = function(id)
   local network = get_network_by_id(id)
   return network.item_supply
 end
 
-road_network.get_supply_depots = function(id, name)
+road_network.get_supply_depots = function(id, name, quality)
   local network = get_network_by_id(id)
-  return network.item_supply[name]
+  local by_quality = network.item_supply[quality or util.normal_quality]
+  return by_quality and by_quality[name]
 end
 
 road_network.add_node = function(surface, x, y)
@@ -468,11 +472,13 @@ road_network.remove_depot = function(depot, category)
 
   if depot.old_contents then
     local item_supply = network.item_supply
-    for name, count in pairs (depot.old_contents) do
-      if item_supply[name] then
-        item_supply[name][depot.index] = nil
+    util.for_each_quality_item(depot.old_contents, function(quality, name, count)
+      local by_quality = item_supply[quality]
+      local by_name = by_quality and by_quality[name]
+      if by_name then
+        by_name[depot.index] = nil
       end
-    end
+    end)
   end
 
   if network.depots[category] then

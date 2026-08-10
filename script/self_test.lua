@@ -126,7 +126,7 @@ local setup = function()
     table.insert(tiles, {name = "transport-drone-road", position = {x, 0}})
   end
   for _, x in pairs({-16, -8, 0, 8, 16}) do
-    for y = -3, 3 do
+    for y = -3, 7 do
       table.insert(tiles, {name = "transport-drone-road", position = {x, y}})
     end
   end
@@ -138,15 +138,23 @@ local setup = function()
   fuel_depot.insert_fluid{name = fuel_fluid, amount = 100000}
   give_drones(fuel_depot, 10)
 
-  -- Item supply <-> request pair.
+  -- Item supply <-> request pair. Stock both normal and uncommon iron-plate, so the quality
+  -- test below can check that requests only ever match supply of the same quality.
   local supply = build(surface, force, "supply-depot", {-8, -3}, defines.direction.south)
   local supply_chest = find_near(surface, "supply-depot-chest", supply.position)
   if not supply_chest then error("supply-depot-chest not found near supply depot") end
-  supply_chest.insert{name = "iron-plate", count = 4000}
+  supply_chest.insert{name = "iron-plate", count = 4000, quality = "normal"}
+  supply_chest.insert{name = "iron-plate", count = 2000, quality = "uncommon"}
 
   local request = build(surface, force, "request-depot", {-8, 3}, defines.direction.north)
   request.set_recipe("request-iron-plate")
   give_drones(request, 10)
+
+  -- A second request depot asking for the SAME item but at "uncommon" quality, on a spur off
+  -- the same road so it shares the network. Should only ever draw from the uncommon stock above.
+  local quality_request = build(surface, force, "request-depot", {-8, 6}, defines.direction.north)
+  quality_request.set_recipe("request-iron-plate", "uncommon")
+  give_drones(quality_request, 10)
 
   -- Fluid supply <-> request pair.
   local fluid_supply = build(surface, force, "fluid-depot", {0, -3}, defines.direction.south)
@@ -185,6 +193,7 @@ local setup = function()
 
   return {
     request = request,
+    quality_request = quality_request,
     fluid_request = fluid_request,
     buffer = buffer,
   }
@@ -195,7 +204,12 @@ local setup_ok = false
 
 local snapshot = function()
   return {
-    item = refs.request.get_output_inventory().get_item_count("iron-plate"),
+    item = refs.request.get_output_inventory().get_item_count{name = "iron-plate", quality = "normal"},
+    quality_item = refs.quality_request.get_output_inventory().get_item_count{name = "iron-plate", quality = "uncommon"},
+    -- Cross-contamination check: the normal-quality request depot's output should never contain
+    -- any uncommon iron-plate, and vice versa for the quality one.
+    item_wrong_quality = refs.request.get_output_inventory().get_item_count{name = "iron-plate", quality = "uncommon"},
+    quality_item_wrong_quality = refs.quality_request.get_output_inventory().get_item_count{name = "iron-plate", quality = "normal"},
     fluid = refs.fluid_request.get_fluid_count(test_fluid),
     buffer = refs.buffer.get_output_inventory().get_item_count("iron-plate"),
   }
@@ -204,8 +218,9 @@ end
 local report_progress = function()
   if not (refs and refs.request and refs.request.valid) then return end
   local s = snapshot()
-  log(string.format("SELF_TEST_PROGRESS tick=%d item_delivered=%d fluid_delivered=%.1f buffer_delivered=%d",
-    game.tick, s.item, s.fluid, s.buffer))
+  log(string.format(
+    "SELF_TEST_PROGRESS tick=%d item_delivered=%d quality_item_delivered=%d (wrong-quality leakage: %d/%d) fluid_delivered=%.1f buffer_delivered=%d",
+    game.tick, s.item, s.quality_item, s.item_wrong_quality, s.quality_item_wrong_quality, s.fluid, s.buffer))
 end
 
 local tick_handler = function(event)
@@ -235,13 +250,21 @@ local tick_handler = function(event)
 
   if tick == 6000 then
     local s = snapshot()
-    local msg = string.format("item=%d fluid=%.1f buffer=%d", s.item, s.fluid, s.buffer)
-    if s.item > 0 and s.fluid > 0 and s.buffer > 0 then
+    local msg = string.format("item=%d quality_item=%d wrong_quality_leakage=%d/%d fluid=%.1f buffer=%d",
+      s.item, s.quality_item, s.item_wrong_quality, s.quality_item_wrong_quality, s.fluid, s.buffer)
+
+    local delivered = s.item > 0 and s.quality_item > 0 and s.fluid > 0 and s.buffer > 0
+    local no_leakage = s.item_wrong_quality == 0 and s.quality_item_wrong_quality == 0
+
+    if delivered and no_leakage then
       log("SELF_TEST_RESULT: PASS - " .. msg)
       game.print("SELF_TEST_RESULT: PASS - " .. msg)
-    else
+    elseif not delivered then
       log("SELF_TEST_RESULT: FAIL - nothing was delivered - " .. msg)
       game.print("SELF_TEST_RESULT: FAIL - nothing was delivered - " .. msg)
+    else
+      log("SELF_TEST_RESULT: FAIL - quality leaked across requests - " .. msg)
+      game.print("SELF_TEST_RESULT: FAIL - quality leaked across requests - " .. msg)
     end
   end
 end

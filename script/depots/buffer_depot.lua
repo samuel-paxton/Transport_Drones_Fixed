@@ -54,6 +54,7 @@ function buffer_depot.new(entity, tags)
     entity = entity,
     index = tostring(entity.unit_number),
     item = false,
+    quality = util.normal_quality,
     drones = {},
     next_spawn_tick = 0,
     mode = request_mode.item,
@@ -206,31 +207,19 @@ function buffer_depot:update_contents()
   local enabled = (self.circuit_limit ~= 0)
 
   if enabled and self.item then
-    new_contents[self.item] = self:get_current_amount()
+    util.set_quality_item(new_contents, self.quality, self.item, self:get_current_amount())
   end
 
-  for name, count in pairs (self.old_contents) do
-    if not new_contents[name] then
-      local item_supply = supply[name]
-      if item_supply then
-        item_supply[self.index] = nil
-      end
+  util.for_each_quality_item(self.old_contents, function(quality, name, count)
+    if not util.get_quality_item(new_contents, quality, name) then
+      util.set_network_supply(supply, quality, name, self.index, nil)
     end
-  end
+  end)
 
-  for name, count in pairs (new_contents) do
-    local item_supply = supply[name]
-    if not item_supply then
-      item_supply = {}
-      supply[name] = item_supply
-    end
-    local new_count = count - self:get_to_be_taken(name)
-    if new_count > 0 then
-      item_supply[self.index] = new_count
-    else
-      item_supply[self.index] = nil
-    end
-  end
+  util.for_each_quality_item(new_contents, function(quality, name, count)
+    local new_count = count - self:get_to_be_taken(quality, name)
+    util.set_network_supply(supply, quality, name, self.index, new_count > 0 and new_count or nil)
+  end)
 
   self.old_contents = new_contents
 
@@ -238,7 +227,7 @@ function buffer_depot:update_contents()
     local behavior = self.circuit_reader.get_or_create_control_behavior()
     local signal
     if self.item then
-      signal = {signal = {type = self.mode == request_mode.item and "item" or "fluid", name = self.item}, count = self:get_current_amount()}
+      signal = {signal = {type = self.mode == request_mode.item and "item" or "fluid", name = self.item, quality = self.quality}, count = self:get_current_amount()}
     end
     util.set_combinator_signal(behavior, 1, signal)
   end
@@ -249,7 +238,7 @@ local min = math.min
 function buffer_depot:dispatch_drone(depot, count)
 
   local drone = self.transport_drone.new(self, self.item)
-  drone:pickup_from_supply(depot, self.item, count)
+  drone:pickup_from_supply(depot, self.quality, self.item, count)
   self:remove_fuel(fuel_amount_per_drone)
 
   self.drones[drone.index] = drone
@@ -275,7 +264,7 @@ function buffer_depot:make_request()
   if not self:can_spawn_drone() then return end
   if not self:should_order() then return end
 
-  local supply_depots = self.road_network.get_supply_depots(self.network_id, name)
+  local supply_depots = self.road_network.get_supply_depots(self.network_id, name, self.quality)
   if not supply_depots then return end
 
   local request_size = self:get_request_size()
@@ -360,8 +349,8 @@ end
 
 
 function buffer_depot:check_request_change()
-  local requested_item = self:get_requested_item()
-  if self.item == requested_item then return end
+  local requested_item, requested_quality = self:get_requested_item()
+  if self.item == requested_item and self.quality == requested_quality then return end
 
   self:set_request_mode()
 
@@ -370,13 +359,14 @@ function buffer_depot:check_request_change()
   end
 
   self.item = requested_item
+  self.quality = requested_quality
 
 end
 
 function buffer_depot:get_requested_item()
-  local recipe = self.entity.get_recipe()
+  local recipe, quality = self.entity.get_recipe()
   if not recipe then return end
-  return recipe.products[1].name
+  return recipe.products[1].name, (quality and quality.name) or util.normal_quality
 end
 
 local stack_cache = {}
@@ -427,7 +417,7 @@ function buffer_depot:can_spawn_drone()
 end
 
 function buffer_depot:get_drone_item_count()
-  return self:get_drone_inventory().get_item_count("transport-drone")
+  return self:get_drone_inventory().get_item_count{name = "transport-drone", quality = util.normal_quality}
 end
 
 function buffer_depot:get_output_fluidbox()
@@ -448,7 +438,7 @@ function buffer_depot:get_current_amount()
   if not self.item then return 0 end
 
   if self.mode == request_mode.item then
-    return self:get_output_inventory().get_item_count(self.item)
+    return self:get_output_inventory().get_item_count{name = self.item, quality = self.quality}
   end
 
   if self.mode == request_mode.fluid then
@@ -459,7 +449,7 @@ end
 
 function buffer_depot:get_available_stack_amount()
   if not self.item then return 0 end
-  return self:get_available_item_count(self.item) / self:get_stack_size()
+  return self:get_available_item_count(self.quality, self.item) / self:get_stack_size()
 end
 
 function buffer_depot:get_minimum_request_size()
@@ -499,11 +489,11 @@ function buffer_depot:should_order()
 end
 
 local min = math.min
-function buffer_depot:give_item(requested_name, requested_count)
+function buffer_depot:give_item(quality, requested_name, requested_count)
 
   if prototypes.item[requested_name] then
     local inventory = self.entity.get_output_inventory()
-    local removed_count = inventory.remove({name = requested_name, count = requested_count})
+    local removed_count = inventory.remove({name = requested_name, count = requested_count, quality = quality})
     return removed_count
   end
 
@@ -548,11 +538,11 @@ local is_valid_fluid = function(fluid_name)
   return valid_fluid_cache[fluid_name]
 end
 
-function buffer_depot:take_item(name, count, temperature)
+function buffer_depot:take_item(quality, name, count, temperature)
   if not count then error("NO COUMT?") end
 
   if self.mode == request_mode.item and is_valid_item(name) then
-    self.entity.get_output_inventory().insert({name = name, count = count})
+    self.entity.get_output_inventory().insert({name = name, count = count, quality = quality})
     return
   end
 
@@ -571,24 +561,22 @@ function buffer_depot:take_item(name, count, temperature)
 
 end
 
-function buffer_depot:get_to_be_taken(name)
-  return self.to_be_taken[name] or 0
+function buffer_depot:get_to_be_taken(quality, name)
+  return util.get_quality_item(self.to_be_taken, quality, name) or 0
 end
 
-function buffer_depot:add_to_be_taken(name, count)
-  --if not (name and count) then return end
-  self.to_be_taken[name] = (self.to_be_taken[name] or 0) + count
-  --self:say(self.to_be_taken[name])
+function buffer_depot:add_to_be_taken(quality, name, count)
+  util.add_quality_item(self.to_be_taken, quality, name, count)
 end
 
-function buffer_depot:get_available_item_count(name)
-  return self:get_current_amount() - self:get_to_be_taken(name)
+function buffer_depot:get_available_item_count(quality, name)
+  return self:get_current_amount() - self:get_to_be_taken(quality, name)
 end
 
 function buffer_depot:remove_drone(drone, remove_item)
   self.drones[drone.index] = nil
   if remove_item then
-    self:get_drone_inventory().remove{name = "transport-drone", count = 1}
+    self:get_drone_inventory().remove{name = "transport-drone", count = 1, quality = util.normal_quality}
   end
   self:update_sticker()
 end
@@ -644,7 +632,7 @@ function buffer_depot:update_circuit_writer()
     if condition.comparator == "=" then
       local first_signal = condition.first_signal
       if first_signal then
-        if first_signal.name == self.item then
+        if first_signal.name == self.item and (first_signal.quality or util.normal_quality) == self.quality then
           local count
           if condition.second_signal and condition.second_signal.name then
             count = self.circuit_writer.get_merged_signal(condition.second_signal)
@@ -691,8 +679,12 @@ end
 
 function buffer_depot:on_config_changed()
   self:set_request_mode()
-  self.to_be_taken = self.to_be_taken or {}
-  self.old_contents = self.old_contents or {}
+  self.quality = self.quality or util.normal_quality
+  -- Reset unconditionally (not "or {}") - contents/to_be_taken used to be flat [name] = count
+  -- tables before quality support; they're now [quality][name] = count. Discarding old data
+  -- here is harmless, it gets rebuilt from scratch on the next update().
+  self.to_be_taken = {}
+  self.old_contents = {}
 end
 
 return buffer_depot

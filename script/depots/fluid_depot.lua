@@ -53,8 +53,12 @@ function fluid_depot:get_corpse()
   return corpse
 end
 
+-- Fluids don't have quality, so this always publishes/reads under the "normal" bucket of the
+-- shared (otherwise quality-indexed) network.item_supply table - transport_drone.lua and the
+-- request/buffer depots don't need to know or care that a given supply depot happens to be a
+-- fluid one, they just always pass a quality through uniformly.
 function fluid_depot:get_to_be_taken(name)
-  return self.to_be_taken[name] or 0
+  return util.get_quality_item(self.to_be_taken, util.normal_quality, name) or 0
 end
 
 function fluid_depot:get_output_fluidbox()
@@ -99,25 +103,13 @@ function fluid_depot:update_contents()
 
   for name, count in pairs (self.old_contents) do
     if not new_contents[name] then
-      local item_supply = supply[name]
-      if item_supply then
-        item_supply[self.index] = nil
-      end
+      util.set_network_supply(supply, util.normal_quality, name, self.index, nil)
     end
   end
 
   for name, count in pairs (new_contents) do
-    local item_supply = supply[name]
-    if not item_supply then
-      item_supply = {}
-      supply[name] = item_supply
-    end
     local new_count = count - self:get_to_be_taken(name)
-    if new_count > 0 then
-      item_supply[self.index] = new_count
-    else
-      item_supply[self.index] = nil
-    end
+    util.set_network_supply(supply, util.normal_quality, name, self.index, new_count > 0 and new_count or nil)
   end
 
   self.old_contents = new_contents
@@ -134,7 +126,7 @@ function fluid_depot:update_contents()
     end
     local signal
     if name and count and count > 0 then
-      signal = {signal = {type = "fluid", name = name}, count = count}
+      signal = {signal = {type = "fluid", name = name, quality = util.normal_quality}, count = count}
     end
     util.set_combinator_signal(behavior, 1, signal)
   end
@@ -166,17 +158,18 @@ function fluid_depot:say(string)
   self.entity.surface.create_entity{name = "tutorial-flying-text", position = self.entity.position, text = string}
 end
 
-function fluid_depot:give_item(requested_name, requested_count)
+-- quality is accepted-and-ignored on all three of these: transport_drone.lua and the
+-- request/buffer depots call supply depots generically without knowing whether they're item or
+-- fluid based, and fluids don't have quality (always effectively normal).
+function fluid_depot:give_item(quality, requested_name, requested_count)
   return self.entity.extract_fluid{name = requested_name, amount = requested_count}
 end
 
-function fluid_depot:add_to_be_taken(name, count)
-  --if not (name and count) then return end
-  self.to_be_taken[name] = (self.to_be_taken[name] or 0) + count
-  --self:say(self.to_be_taken[name])
+function fluid_depot:add_to_be_taken(quality, name, count)
+  util.add_quality_item(self.to_be_taken, util.normal_quality, name, count)
 end
 
-function fluid_depot:get_available_item_count(name)
+function fluid_depot:get_available_item_count(quality, name)
   return self.entity.get_fluid_count(name) - self:get_to_be_taken(name)
 end
 
@@ -195,7 +188,8 @@ function fluid_depot:on_removed()
 end
 
 function fluid_depot:on_config_changed()
-  self.old_contents = self.old_contents or {}
+  self.to_be_taken = {}
+  self.old_contents = {}
 end
 
 return fluid_depot

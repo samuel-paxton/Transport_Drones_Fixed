@@ -74,12 +74,14 @@ function network_reader:update()
   local signal = util.get_combinator_signal(behavior, 1)
   local name = signal.signal and signal.signal.name
   if not name then return end
+  local quality = signal.signal.quality or util.normal_quality
 
   local supply = self.road_network.get_network_item_supply(self.network_id)
   if not supply then return end
 
   local sum = 0
-  local counts = supply[name]
+  local by_quality = supply[quality]
+  local counts = by_quality and by_quality[name]
   if counts then
     for depot, count in pairs (counts) do
       sum = sum + count

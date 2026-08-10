@@ -160,7 +160,7 @@ function transport_drone:add_slow_sticker()
   self.entity.surface.create_entity{name = "drone-slowdown-sticker", position = self.entity.position, target = self.entity, force = "neutral"}
 end
 
-function transport_drone:pickup_from_supply(supply, item, count)
+function transport_drone:pickup_from_supply(supply, quality, item, count)
 
   if not supply.entity.valid then
     self:return_to_requester()
@@ -170,7 +170,8 @@ function transport_drone:pickup_from_supply(supply, item, count)
   self.supply_depot = supply
   self.requested_count = count
   self.requested_item = item
-  self.supply_depot:add_to_be_taken(item, count)
+  self.requested_quality = quality
+  self.supply_depot:add_to_be_taken(quality, item, count)
 
   self:add_slow_sticker()
   self:update_speed()
@@ -298,7 +299,7 @@ function transport_drone:process_pickup()
     return
   end
 
-  if self.requested_item ~= self.request_depot.item then
+  if self.requested_item ~= self.request_depot.item or self.requested_quality ~= self.request_depot.quality then
     self:return_to_requester()
     return
   end
@@ -308,7 +309,7 @@ function transport_drone:process_pickup()
     return
   end
 
-  local available_count = self.requested_count + self.supply_depot:get_available_item_count(self.request_depot.item)
+  local available_count = self.requested_count + self.supply_depot:get_available_item_count(self.request_depot.quality, self.request_depot.item)
 
   local to_take
   if not self.request_depot.circuit_limit then
@@ -323,10 +324,11 @@ function transport_drone:process_pickup()
 
   if to_take > 0 then
     local temperature = self.supply_depot.get_temperature and self.supply_depot:get_temperature()
-    local given_count = self.supply_depot:give_item(self.requested_item, to_take)
+    local given_count = self.supply_depot:give_item(self.requested_quality, self.requested_item, to_take)
 
     if given_count > 0 then
       self.held_item = self.requested_item
+      self.held_quality = self.requested_quality
       self.held_count = given_count
       self.held_temperature = temperature
       self:update_sticker()
@@ -362,8 +364,9 @@ function transport_drone:clear_reservations()
 
   if self.state == states.going_to_supply then
     if self.supply_depot and self.supply_depot.entity.valid and self.requested_item then
-      self.supply_depot:add_to_be_taken(self.requested_item, -self.requested_count)
+      self.supply_depot:add_to_be_taken(self.requested_quality, self.requested_item, -self.requested_count)
       self.requested_item = nil
+      self.requested_quality = nil
       self.requested_count = nil
     end
   end
@@ -523,8 +526,9 @@ function transport_drone:process_return_to_requester()
   end
 
   if self.held_item then
-    self.request_depot:take_item(self.held_item, self.held_count, self.held_temperature)
+    self.request_depot:take_item(self.held_quality, self.held_item, self.held_count, self.held_temperature)
     self.held_item = nil
+    self.held_quality = nil
   end
 
   if self.fuel_amount then
@@ -886,7 +890,8 @@ transport_drone.on_configuration_changed = function()
       if drone.state == states.going_to_supply then
         local count = drone.requested_count or 0
         local item = drone.requested_item or drone.request_depot.item
-        drone:pickup_from_supply(drone.supply_depot, item, count)
+        local quality = drone.requested_quality or drone.request_depot.quality
+        drone:pickup_from_supply(drone.supply_depot, quality, item, count)
       end
       if drone.state == states.deliver_fuel then
         drone.target_depot.fuel_on_the_way = drone.target_depot.fuel_on_the_way + (drone.fuel_amount or 0)

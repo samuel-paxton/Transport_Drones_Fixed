@@ -77,8 +77,8 @@ function supply_depot:save_to_blueprint_tags()
   }
 end
 
-function supply_depot:get_to_be_taken(name)
-  return self.to_be_taken[name] or 0
+function supply_depot:get_to_be_taken(quality, name)
+  return util.get_quality_item(self.to_be_taken, quality, name) or 0
 end
 
 function supply_depot:update_contents()
@@ -96,28 +96,16 @@ function supply_depot:update_contents()
     new_contents = util.contents_to_dict(self.entity.get_output_inventory().get_contents())
   end
 
-  for name, count in pairs (self.old_contents) do
-    if not new_contents[name] then
-      local item_supply = supply[name]
-      if item_supply then
-        item_supply[self.index] = nil
-      end
+  util.for_each_quality_item(self.old_contents, function(quality, name, count)
+    if not util.get_quality_item(new_contents, quality, name) then
+      util.set_network_supply(supply, quality, name, self.index, nil)
     end
-  end
+  end)
 
-  for name, count in pairs (new_contents) do
-    local item_supply = supply[name]
-    if not item_supply then
-      item_supply = {}
-      supply[name] = item_supply
-    end
-    local new_count = count - self:get_to_be_taken(name)
-    if new_count > 0 then
-      item_supply[self.index] = new_count
-    else
-      item_supply[self.index] = nil
-    end
-  end
+  util.for_each_quality_item(new_contents, function(quality, name, count)
+    local new_count = count - self:get_to_be_taken(quality, name)
+    util.set_network_supply(supply, quality, name, self.index, new_count > 0 and new_count or nil)
+  end)
 
   self.old_contents = new_contents
 
@@ -138,20 +126,18 @@ function supply_depot:say(string)
   self.entity.surface.create_entity{name = "tutorial-flying-text", position = self.entity.position, text = string}
 end
 
-function supply_depot:give_item(requested_name, requested_count)
+function supply_depot:give_item(quality, requested_name, requested_count)
   local inventory = self.entity.get_output_inventory()
-  local removed_count = inventory.remove({name = requested_name, count = requested_count})
+  local removed_count = inventory.remove({name = requested_name, count = requested_count, quality = quality})
   return removed_count
 end
 
-function supply_depot:add_to_be_taken(name, count)
-  --if not (name and count) then return end
-  self.to_be_taken[name] = (self.to_be_taken[name] or 0) + count
-  --self:say(name.." - "..self.to_be_taken[name]..": "..count)
+function supply_depot:add_to_be_taken(quality, name, count)
+  util.add_quality_item(self.to_be_taken, quality, name, count)
 end
 
-function supply_depot:get_available_item_count(name)
-  return self.entity.get_output_inventory().get_item_count(name) - self:get_to_be_taken(name)
+function supply_depot:get_available_item_count(quality, name)
+  return self.entity.get_output_inventory().get_item_count{name = name, quality = quality} - self:get_to_be_taken(quality, name)
 end
 
 function supply_depot:add_to_network()
@@ -183,7 +169,10 @@ function supply_depot:on_removed(event)
 end
 
 function supply_depot:on_config_changed()
-  self.old_contents = self.old_contents or {}
+  -- Reset unconditionally: contents/to_be_taken used to be flat [name] = count tables before
+  -- quality support; they're now [quality][name] = count. Rebuilt from scratch on next update().
+  self.to_be_taken = {}
+  self.old_contents = {}
 end
 
 return supply_depot

@@ -48,6 +48,7 @@ function request_depot.new(entity, tags)
     entity = entity,
     index = tostring(entity.unit_number),
     item = false,
+    quality = util.normal_quality,
     drones = {},
     mode = request_mode.item,
     fuel_on_the_way = 0
@@ -215,7 +216,7 @@ function request_depot:make_request()
 
   if not self:can_spawn_drone() then return end
   if not self:should_order() then return end
-  local supply_depots = self.road_network.get_supply_depots(self.network_id, name)
+  local supply_depots = self.road_network.get_supply_depots(self.network_id, name, self.quality)
   if not supply_depots then return end
 
   local request_size = self:get_request_size()
@@ -271,7 +272,7 @@ function request_depot:update_circuit_reader()
     local behavior = self.circuit_reader.get_or_create_control_behavior()
     local signal
     if self.item then
-      signal = {signal = {type = self.mode == request_mode.item and "item" or "fluid", name = self.item}, count = self:get_current_amount()}
+      signal = {signal = {type = self.mode == request_mode.item and "item" or "fluid", name = self.item, quality = self.quality}, count = self:get_current_amount()}
     end
     util.set_combinator_signal(behavior, 1, signal)
     local drone_signal
@@ -325,8 +326,8 @@ end
 
 
 function request_depot:check_request_change()
-  local requested_item = self:get_requested_item()
-  if self.item == requested_item then
+  local requested_item, requested_quality = self:get_requested_item()
+  if self.item == requested_item and self.quality == requested_quality then
     return
   end
 
@@ -338,6 +339,7 @@ function request_depot:check_request_change()
   end
 
   self.item = requested_item
+  self.quality = requested_quality
 
   if not self.item then return end
 
@@ -346,9 +348,9 @@ function request_depot:check_request_change()
 end
 
 function request_depot:get_requested_item()
-  local recipe = self.entity.get_recipe()
+  local recipe, quality = self.entity.get_recipe()
   if not recipe then return end
-  return recipe.products[1].name
+  return recipe.products[1].name, (quality and quality.name) or util.normal_quality
 end
 
 local stack_cache = {}
@@ -409,7 +411,7 @@ function request_depot:can_spawn_drone()
 end
 
 function request_depot:get_drone_item_count()
-  return self:get_drone_inventory().get_item_count("transport-drone")
+  return self:get_drone_inventory().get_item_count{name = "transport-drone", quality = util.normal_quality}
 end
 
 function request_depot:get_output_fluidbox()
@@ -423,7 +425,7 @@ end
 function request_depot:get_current_amount()
 
   if self.mode == request_mode.item then
-    return self:get_output_inventory().get_item_count(self.item)
+    return self:get_output_inventory().get_item_count{name = self.item, quality = self.quality}
   end
 
   if self.mode == request_mode.fluid then
@@ -473,7 +475,7 @@ function request_depot:update_circuit_writer()
     if condition.comparator == "=" then
       local first_signal = condition.first_signal
       if first_signal then
-        if first_signal.name == self.item then
+        if first_signal.name == self.item and (first_signal.quality or util.normal_quality) == self.quality then
           local count
           if condition.second_signal and condition.second_signal.name then
             count = self.circuit_writer.get_merged_signal(condition.second_signal)
@@ -503,7 +505,7 @@ local min = math.min
 function request_depot:dispatch_drone(depot, count)
 
   local drone = self.transport_drone.new(self, self.item)
-  drone:pickup_from_supply(depot, self.item, count)
+  drone:pickup_from_supply(depot, self.quality, self.item, count)
   self:remove_fuel(fuel_amount_per_drone)
 
   self.drones[drone.index] = drone
@@ -531,11 +533,11 @@ local is_valid_fluid = function(fluid_name)
   return valid_fluid_cache[fluid_name]
 end
 
-function request_depot:take_item(name, count, temperature)
+function request_depot:take_item(quality, name, count, temperature)
   if not count then error("NO COUMT?") end
 
   if self.mode == request_mode.item and is_valid_item(name) then
-    self.entity.get_output_inventory().insert({name = name, count = count})
+    self.entity.get_output_inventory().insert({name = name, count = count, quality = quality})
     return
   end
 
@@ -557,7 +559,7 @@ end
 function request_depot:remove_drone(drone, remove_item)
   self.drones[drone.index] = nil
   if remove_item then
-    self:get_drone_inventory().remove{name = "transport-drone", count = 1}
+    self:get_drone_inventory().remove{name = "transport-drone", count = 1, quality = util.normal_quality}
   end
   self:update_sticker()
 end
@@ -611,6 +613,7 @@ end
 
 function request_depot:on_config_changed()
   self:set_request_mode()
+  self.quality = self.quality or util.normal_quality
   self.fuel_on_the_way = self.fuel_on_the_way or 0
 end
 
