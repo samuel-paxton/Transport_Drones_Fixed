@@ -461,6 +461,11 @@ end
 
 local lib = {}
 
+-- Exposed for script/self_test.lua: on_player_setup_blueprint only ever reads event.player_index
+-- (everything else comes off player.cursor_stack/blueprint_to_setup), and it can't be raised
+-- through script.raise_event, so the test calls it directly with a synthetic event.
+lib.on_player_setup_blueprint = on_player_setup_blueprint
+
 lib.events =
 {
   [defines.events.on_built_entity] = on_created_entity,

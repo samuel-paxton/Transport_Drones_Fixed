@@ -92,7 +92,7 @@ function buffer_depot:read_tags(tags)
           position = self.entity.position,
           force = self.entity.force,
           target = self.entity,
-          modules = {["transport-drone"] = drone_count}
+          modules = util.drone_item_request_modules(drone_count)
         }
       end
     end

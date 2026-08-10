@@ -691,7 +691,7 @@ local refresh_network_gui = function(player, selected_index)
 
   if not network then return end
 
-  local inner = frame.add{type = "frame", style = "inside_deep_frame_for_tabs", name = "inner_frame", direction = "vertical"}
+  local inner = frame.add{type = "frame", style = "inside_deep_frame", name = "inner_frame", direction = "vertical"}
   local subheader = inner.add{type = "flow", name = "subheader_frame"}
   subheader.style.vertical_align = "center"
   local pusher = subheader.add{type = "empty-widget"}
@@ -764,7 +764,7 @@ local open_gui = function(player, network_index)
 
   local drop_down = title_flow.add{type = "drop-down", name = "road_network_drop_down"}
 
-  title_flow.add{type = "sprite-button", style = "frame_action_button", sprite = "utility/close_white", name = "close_road_network_gui"}
+  title_flow.add{type = "sprite-button", style = "frame_action_button", sprite = "utility/close", name = "close_road_network_gui"}
 
 
   local selected
@@ -933,6 +933,10 @@ function(command)
 end)
 
 local lib = {}
+
+-- Exposed for script/self_test.lua, which can't simulate a real player click/hotkey press.
+lib.open_gui = open_gui
+lib.close_gui = close_gui
 
 lib.events =
 {

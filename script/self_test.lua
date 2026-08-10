@@ -9,6 +9,8 @@
 -- `factorio.exe --benchmark test.zip --benchmark-ticks 6000` and check the log for
 -- "SELF_TEST_RESULT". Re-comment it out again afterwards.
 local self_test = {}
+local gui = require("script/gui")
+local depot_common = require("script/depot_common")
 
 local fuel_fluid = "petroleum-gas"
 local test_fluid = "water"
@@ -30,6 +32,76 @@ local give_drones = function(entity, count)
   entity.get_inventory(defines.inventory.crafter_input).insert{name = "transport-drone", count = count}
 end
 
+-- Copies everything built so far into a blueprint and writes transport_depot_tags onto it the
+-- same way on_player_setup_blueprint would (the write side), then checks a captured tag reads
+-- back correctly into a freshly-built depot as an item-request-proxy (the read side, via
+-- depot_lib:read_tags()). The read side is driven by raising script_raised_built directly with
+-- a synthetic tags payload - the same event/shape a construction robot reviving a tagged ghost
+-- would produce - rather than via LuaItemStack::build_blueprint, since that places real entities
+-- straight away (not ghosts) and it's unclear whether/how blueprint entity tags carry over on
+-- that particular path; script_raised_built is the actual, documented, script-facing hook this
+-- mod's own on_built_entity/on_robot_built_entity/script_raised_built/script_raised_revive
+-- handler already treats identically.
+local check_blueprint_tags = function(player, surface, force)
+  local cursor = player.cursor_stack
+  cursor.set_stack{name = "blueprint", count = 1}
+
+  local capture_area = {{-20, -8}, {20, 8}}
+  cursor.create_blueprint{surface = surface, force = force, area = capture_area, always_include_tiles = false}
+
+  local entities = cursor.get_blueprint_entities()
+  if not (entities and next(entities)) then
+    error("blueprint capture got no entities")
+  end
+
+  -- on_player_setup_blueprint only ever reads event.player_index, and can't be raised through
+  -- script.raise_event, so call the handler directly.
+  depot_common.on_player_setup_blueprint({player_index = player.index})
+
+  local tagged_count = 0
+  local fuel_depot_tag
+  for index, blueprint_entity in pairs(entities) do
+    local tag = cursor.get_blueprint_entity_tag(index, "transport_depot_tags")
+    if tag then
+      tagged_count = tagged_count + 1
+      log("SELF_TEST: blueprint tag on " .. blueprint_entity.name .. " = " .. serpent.line(tag))
+      if blueprint_entity.name == "fuel-depot" then
+        fuel_depot_tag = tag
+      end
+    end
+  end
+
+  if tagged_count == 0 then
+    error("no depot got a transport_depot_tags blueprint tag")
+  end
+  if not fuel_depot_tag then
+    error("fuel-depot didn't get a transport_depot_tags blueprint tag")
+  end
+  cursor.clear()
+
+  -- Read side: build a fresh fuel depot (not network-connected - that's not what's being tested
+  -- here) and raise script_raised_built with the captured tag, exactly as a robot reviving a
+  -- tagged ghost would. read_tags() should turn drone_count into an item-request-proxy.
+  local paste_position = {0, 40}
+  surface.request_to_generate_chunks(paste_position, 3)
+  surface.force_generate_chunk_requests()
+
+  local fresh = surface.create_entity{name = "fuel-depot", position = paste_position, direction = defines.direction.south, force = force, raise_built = false}
+  if not (fresh and fresh.valid) then
+    error("failed to build fresh fuel-depot for the tag read-back check")
+  end
+
+  script.raise_event(defines.events.script_raised_built, {entity = fresh, tags = {transport_depot_tags = fuel_depot_tag}, tick = game.tick})
+
+  local proxies = surface.find_entities_filtered{name = "item-request-proxy", position = paste_position, radius = 2}
+  log("SELF_TEST: tag read-back produced " .. #proxies .. " item-request-proxy(es) requesting " ..
+    tostring(fuel_depot_tag.drone_count) .. " drones")
+
+  if #proxies == 0 then
+    error("tag read-back produced no item-request-proxy - read_tags() didn't apply drone_count")
+  end
+end
+
 local setup = function()
   local surface = game.surfaces["nauvis"]
   surface.request_to_generate_chunks({0, 0}, 3)
@@ -37,6 +109,15 @@ local setup = function()
 
   local force = game.forces.player
   force.research_all_technologies()
+
+  -- A save created via headless --create has never had a client actually join and spawn, so
+  -- the local player starts in remote view (no character, no cursor_stack) rather than as a
+  -- character. Give it one so cursor/inventory-dependent checks (the blueprint test) can run.
+  local player = game.players[1]
+  if player and player.valid and player.controller_type ~= defines.controllers.character then
+    local character = surface.create_entity{name = "character", position = {0, 0}, force = force}
+    player.set_controller{type = defines.controllers.character, character = character}
+  end
 
   -- Long road strip connecting everything, plus perpendicular stubs so every depot's
   -- corpse-hidden-tile actually lands on a road node.
@@ -84,6 +165,21 @@ local setup = function()
   build(surface, force, "road-network-reader", {16, 0}, defines.direction.north)
   build(surface, force, "transport-depot-writer", {16, 2}, defines.direction.north)
   build(surface, force, "transport-depot-reader", {16, 4}, defines.direction.north)
+
+  -- Also exercise the road network GUI, if there's a player to open it for (there is one even
+  -- in a headless --create'd map; there won't be one on a dedicated server with nobody connected).
+  local player = game.players[1]
+  if player and player.valid then
+    gui.open_gui(player)
+    log("SELF_TEST: opened road network GUI for player 1")
+    gui.close_gui(player)
+    log("SELF_TEST: closed road network GUI for player 1")
+
+    check_blueprint_tags(player, surface, force)
+    log("SELF_TEST: blueprint tag round-trip ok")
+  else
+    log("SELF_TEST: no player available, skipping GUI/blueprint checks")
+  end
 
   log("SELF_TEST: setup complete")
 

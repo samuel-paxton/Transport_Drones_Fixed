@@ -84,6 +84,21 @@ util.set_fluid_box_content = function(entity, index, fluid)
   end
 end
 
+-- item-request-proxy's (and blueprint entities') "modules" field used to be a plain
+-- {[item_name] = count} dictionary. It's now an array of BlueprintInsertPlan, which needs an
+-- explicit destination inventory + stack index per item rather than just a name and a count.
+-- This mod only ever uses it to request "transport-drone" items into a depot's crafter_input
+-- (the recipe's item ingredient slot), so that's the only shape this needs to build.
+util.drone_item_request_modules = function(count)
+  return
+  {
+    {
+      id = {name = "transport-drone"},
+      items = {in_inventory = {{inventory = defines.inventory.crafter_input, stack = 0, count = count}}}
+    }
+  }
+end
+
 -- LuaInventory::get_contents() now returns an array of {name=, count=, quality=} rather than
 -- a name -> count dictionary. This mod doesn't track quality (everything it makes/moves is
 -- always normal quality - see the recipes' allow_quality = false), so just collapse by name.
