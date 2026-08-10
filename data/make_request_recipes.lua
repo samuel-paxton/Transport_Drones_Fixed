@@ -1,3 +1,37 @@
+local function get_prototype(base_type, name)
+  for type_name in pairs(defines.prototypes[base_type]) do
+    local prototypes = data.raw[type_name]
+    if prototypes and prototypes[name] then
+      return prototypes[name]
+    end
+  end
+end
+
+local function get_item_localised_name(name)
+  local item = get_prototype("item", name)
+  if not item then return end
+  if item.localised_name then
+    return item.localised_name
+  end
+  local prototype
+  local type_name = "item"
+  if item.place_result then
+    prototype = get_prototype("entity", item.place_result)
+    type_name = "entity"
+  elseif item.place_as_equipment_result then
+    prototype = get_prototype("equipment", item.place_as_equipment_result)
+    type_name = "equipment"
+  elseif item.place_as_tile then
+    -- Tiles with variations don't have a localised name
+    local tile_prototype = data.raw.tile[item.place_as_tile.result]
+    if tile_prototype and tile_prototype.localised_name then
+      prototype = tile_prototype
+      type_name = "tile"
+    end
+  end
+  return prototype and prototype.localised_name or {type_name.."-name."..name}
+end
+
 local fuel = settings.startup["fuel-fluid"].value
 if not data.raw.fluid[fuel] then
   log("Bad name for fuel fluid. reverting to something else...")
@@ -50,6 +84,7 @@ local make_recipe = function(item)
   {
     type = "recipe",
     name = "request-"..item.name,
+    localised_name = {"request-item", get_item_localised_name(item.name)},
     icon = item.dark_background_icon or item.icon,
     icon_size = item.icon_size,
     icons = item.icons,
@@ -83,7 +118,7 @@ local make_recipe = function(item)
     allow_inserter_overload = false,
     -- The requested item's quality is exactly what the player picks here - the network will
     -- look for a supply of the matching quality.
-    allow_quality = true,
+    can_set_quality = true,
     energy_required = 2 ^ 50
   }
   data:extend{recipe}
@@ -136,6 +171,7 @@ local make_fluid_request_recipe = function(fluid)
   {
     type = "recipe",
     name = "request-"..fluid.name,
+    localised_name = {"request-item", fluid.localised_name or "__FLUID__"..fluid.name.."__"},
     icon = fluid.icon,
     icon_size = fluid.icon_size,
     icons = fluid.icons,
@@ -159,7 +195,7 @@ local make_fluid_request_recipe = function(fluid)
     allow_intermediates = false,
     -- Fluids don't have quality, so there's nothing for a quality selector to do here; this also
     -- keeps the drone ingredient pinned to normal quality (same as the item requests above).
-    allow_quality = false,
+    can_set_quality = false,
     energy_required = 2 ^ 50
   }
   data:extend{recipe}
@@ -184,7 +220,7 @@ local fuel_recipe =
     {type = "item", name = "transport-drone", amount = 100},
     {type = "fluid", name = fuel, amount = 5000}
   },
-  overload_multipler = 50,
+  overload_multiplier = 50,
   allow_quality = false,
   energy_required = 5,
   results =

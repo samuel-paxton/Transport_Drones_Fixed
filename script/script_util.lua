@@ -239,7 +239,7 @@ end
 
 local random = math.random
 util.shuffle_table = function(table)
-  --local profiler = game.create_profiler()
+  --local profiler = helpers.create_profiler()
   for k1, v1 in pairs (table) do
     local k2 = random(#table)
     table[k1], table[k2] = table[k2], table[k1]

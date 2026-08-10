@@ -7,7 +7,8 @@ tile.localised_name = {"road"}
 tile.tint = {0.5, 0.5, 0.5}
 tile.collision_mask = {layers = {}} -- overwritten in data-final-fixes.lua once the road collision layer is assigned
 tile.minable.result = "road"
-tile.layer = 250
+tile.layer = 24
+tile.layer_group = "ground-artificial"
 tile.placeable_by = {{item = "road", count = 1}}
 tile.map_color={r=86/2, g=82/2, b=74/2}
 tile.walking_speed_modifier = 1.5
@@ -46,7 +47,8 @@ better_tile.localised_name = {"fast-road"}
 better_tile.tint = {0.5, 0.5, 0.5}
 better_tile.collision_mask = {layers = {}} -- overwritten in data-final-fixes.lua once the road collision layer is assigned
 better_tile.minable.result = "fast-road"
-better_tile.layer = 251
+better_tile.layer = 25
+better_tile.layer_group = "ground-artificial"
 better_tile.placeable_by = {{item = "fast-road", count = 1}}
 better_tile.map_color={r=86/2, g=82/2, b=74/2}
 better_tile.walking_speed_modifier = 2

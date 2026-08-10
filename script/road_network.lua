@@ -551,7 +551,7 @@ end
 
 local reset = function()
 
-  local profiler = game.create_profiler()
+  local profiler = helpers.create_profiler()
 
   script_data.node_map = {}
   script_data.networks = {}

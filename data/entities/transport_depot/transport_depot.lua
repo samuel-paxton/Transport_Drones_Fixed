@@ -4,11 +4,6 @@ local assembler3pipepictures = assembler_pictures.assembler3pipepictures
 local collision_box = {{-1.25, -1.25},{1.25, 1.25}}
 local selection_box = {{-1.5, -1.5}, {1.5, 1.5}}
 
--- Wider box for depots whose fluid pipe connections poke out beyond the base footprint
--- (2.0+ requires PipeConnectionDefinition positions to lie inside the entity's collision box)
-local fluid_collision_box = {{-1.25, -2}, {1.25, 2}}
-local fluid_selection_box = {{-1.5, -2}, {1.5, 2}}
-
 local category =
 {
   type = "item-subgroup",
@@ -20,6 +15,16 @@ local category =
 data:extend{category}
 
 local depot = util.copy(data.raw["assembling-machine"]["assembling-machine-3"])
+
+-- AssemblingMachinePrototype (and furnace, which fluid-depot below becomes) has no "animation"
+-- property at all as of 2.0+ - graphics live under graphics_set.animation (an Animation4Way)
+-- instead. Setting .animation directly is just silently ignored by the prototype loader, and
+-- clearing the inherited vanilla graphics_set with nothing replacing it leaves the entity fully
+-- invisible. This helper sets up graphics_set with our custom animation in the one shape that's
+-- actually read.
+local set_depot_animation = function(prototype, animation_4_way)
+  prototype.graphics_set = {animation = animation_4_way}
+end
 
 local caution_sprite =
 {
@@ -53,8 +58,8 @@ depot.localised_name = {"request-depot"}
 depot.icon = util.path("data/entities/transport_depot/request-depot-icon.png")
 depot.icon_size = 216
 depot.icon_mipmaps = 0
-depot.collision_box = fluid_collision_box
-depot.selection_box = fluid_selection_box
+depot.collision_box = collision_box
+depot.selection_box = selection_box
 depot.max_health = 150
 depot.fast_replaceable_group = nil
 depot.radius_visualisation_specification =
@@ -68,12 +73,15 @@ depot.fluid_boxes =
   {
     production_type = "input",
     volume = 5000,
-    pipe_connections = {{ flow_direction="input", direction = defines.direction.north, position = {0, -2} }},
+    -- Position is relative to the entity center and must lie inside collision_box (2.0+
+    -- requirement); {0, -1} sits right at the north edge of the 1.25-tile-radius box above,
+    -- matching where request-depot-base.png actually draws the socket.
+    pipe_connections = {{ flow_direction="input", direction = defines.direction.north, position = {0, -1} }},
   },
   {
     production_type = "output",
     volume = 10000000,
-    pipe_connections = {{ flow_direction="output", direction = defines.direction.south, position = {0, 2} }},
+    pipe_connections = {{ flow_direction="output", direction = defines.direction.south, position = {0, 1} }},
     pipe_covers = pipecoverspictures(),
     pipe_picture = assembler3pipepictures,
     secondary_draw_orders = { north = -1, east = -1, west = -1}
@@ -102,7 +110,7 @@ depot.energy_source =
 }
 depot.placeable_by = {item = "request-depot", count = 1}
 
-depot.animation =
+set_depot_animation(depot,
 {
   north =
   {
@@ -132,7 +140,7 @@ depot.animation =
       request_base{0, 0.4},
     }
   },
-}
+})
 
 local supply_depot = util.copy(depot)
 supply_depot.name = "supply-depot"
@@ -147,7 +155,7 @@ supply_depot.fluid_boxes =
   {
     production_type = "input",
     volume = 5000,
-    pipe_connections = {{ flow_direction="input", direction = defines.direction.north, position = {0, -2} }},
+    pipe_connections = {{ flow_direction="input", direction = defines.direction.north, position = {0, -1} }},
   },
 }
 supply_depot.fluid_boxes_off_when_no_fluid_recipe = false
@@ -165,7 +173,7 @@ local supply_base = function(shift)
   }
 end
 
-supply_depot.animation =
+set_depot_animation(supply_depot,
 {
   north =
   {
@@ -195,7 +203,7 @@ supply_depot.animation =
       supply_base{0, 0.4},
     }
   },
-}
+})
 
 local caution_corpse =
 {
@@ -322,19 +330,19 @@ fuel_depot.name = "fuel-depot"
 fuel_depot.localised_name = {"fuel-depot"}
 fuel_depot.icon = util.path("data/entities/transport_depot/fuel-depot-icon.png")
 fuel_depot.icon_size = 264
-fuel_depot.collision_box = {{-2.25, -3},{2.25, 3}}
-fuel_depot.selection_box = {{-2.25, -3},{2.25, 3}}
+fuel_depot.collision_box = {{-2.25, -2.25},{2.25, 2.25}}
+fuel_depot.selection_box = {{-2.25, -2.25},{2.25, 2.25}}
 fuel_depot.fluid_boxes =
 {
   {
     production_type = "output",
     volume = 1000,
-    pipe_connections = {{ flow_direction="input-output", direction = defines.direction.north, position = {0, -3} }},
+    pipe_connections = {{ flow_direction="input-output", direction = defines.direction.north, position = {0, -2} }},
   },
   {
     production_type = "input",
     volume = 1000,
-    pipe_connections = {{ flow_direction="input-output", direction = defines.direction.south, position = {0, 3} }},
+    pipe_connections = {{ flow_direction="input-output", direction = defines.direction.south, position = {0, 2} }},
     pipe_covers = pipecoverspictures(),
     pipe_picture = assembler3pipepictures,
     secondary_draw_orders = { north = -1, east = -1, west = -1}
@@ -354,7 +362,7 @@ local fuel_base = function(shift)
   }
 end
 
-fuel_depot.animation =
+set_depot_animation(fuel_depot,
 {
   north =
   {
@@ -384,7 +392,7 @@ fuel_depot.animation =
       fuel_base(),
     }
   },
-}
+})
 
 local fuel_depot_items =
 {
@@ -466,8 +474,8 @@ local fluid_supply_depot = util.copy(fuel_depot)
 fluid_supply_depot.localised_name = {"fluid-depot"}
 fluid_supply_depot.icon = util.path("data/entities/transport_depot/fluid-depot-icon.png")
 fluid_supply_depot.icon_size = 144
-fluid_supply_depot.collision_box = fluid_collision_box
-fluid_supply_depot.selection_box = fluid_selection_box
+fluid_supply_depot.collision_box = collision_box
+fluid_supply_depot.selection_box = selection_box
 fluid_supply_depot.name = "fluid-depot"
 fluid_supply_depot.type = "furnace"
 fluid_supply_depot.crafting_categories = {"transport-fluid-request"}
@@ -483,12 +491,12 @@ fluid_supply_depot.fluid_boxes =
   {
     production_type = "output",
     volume = 1000,
-    pipe_connections = {{ flow_direction="input-output", direction = defines.direction.north, position = {0, -2} }},
+    pipe_connections = {{ flow_direction="input-output", direction = defines.direction.north, position = {0, -1} }},
   },
   {
     production_type = "input",
     volume = 20000,
-    pipe_connections = {{ flow_direction="input-output", direction = defines.direction.south, position = {0, 2} }},
+    pipe_connections = {{ flow_direction="input-output", direction = defines.direction.south, position = {0, 1} }},
     pipe_covers = pipecoverspictures(),
     pipe_picture = assembler3pipepictures,
     secondary_draw_orders = { north = -1, east = -1, west = -1}
@@ -508,7 +516,7 @@ local fluid_base = function(shift)
   }
 end
 
-fluid_supply_depot.animation =
+set_depot_animation(fluid_supply_depot,
 {
   north =
   {
@@ -538,7 +546,7 @@ fluid_supply_depot.animation =
       fluid_base(),
     }
   },
-}
+})
 
 data:extend
 {
@@ -613,7 +621,7 @@ local buffer_base = function(shift)
   }
 end
 
-buffer_depot.animation =
+set_depot_animation(buffer_depot,
 {
   north =
   {
@@ -643,7 +651,7 @@ buffer_depot.animation =
       buffer_base{0, 0.4},
     }
   }
-}
+})
 
 local buffer_depot_items =
 {
