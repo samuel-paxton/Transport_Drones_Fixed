@@ -85,20 +85,11 @@ function fluid_depot:update_contents()
 
   local new_contents = {}
 
-
-  local enabled = true
-  if (self.circuit_writer and self.circuit_writer.valid) then
-    local behavior = self.circuit_writer.get_control_behavior()
-    if behavior and behavior.disabled then
-      enabled = false
-    end
-  end
-
-  if enabled then
-    local box = self:get_output_fluidbox()
-    if box then
-      new_contents[box.name] = box.amount
-    end
+  -- Provider-side depots (supply/mining/fluid) always offer their stock to the network now - see
+  -- supply_depot.lua for why. Only request/buffer depots are circuit-gateable.
+  local box = self:get_output_fluidbox()
+  if box then
+    new_contents[box.name] = box.amount
   end
 
   for name, count in pairs (self.old_contents) do
@@ -113,23 +104,6 @@ function fluid_depot:update_contents()
   end
 
   self.old_contents = new_contents
-
-  if self.circuit_reader and self.circuit_reader.valid then
-    local behavior = self.circuit_reader.get_or_create_control_behavior()
-    local name, count = next(new_contents)
-    if not name then
-      local box = self:get_output_fluidbox()
-      if box then
-        name = box.name
-        count = box.amount
-      end
-    end
-    local signal
-    if name and count and count > 0 then
-      signal = {signal = {type = "fluid", name = name, quality = util.normal_quality}, count = count}
-    end
-    util.set_combinator_signal(behavior, 1, signal)
-  end
 
 end
 

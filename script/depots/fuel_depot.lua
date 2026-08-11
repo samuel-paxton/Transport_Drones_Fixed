@@ -96,17 +96,8 @@ function fuel_depot:save_to_blueprint_tags()
   }
 end
 
-function fuel_depot:update_circuit_reader()
-  if self.circuit_reader and self.circuit_reader.valid then
-    local behavior = self.circuit_reader.get_or_create_control_behavior()
-    local signal = {signal = {type = "fluid", name = get_fuel_fluid()}, count = self:get_fuel_amount()}
-    util.set_combinator_signal(behavior, 1, signal)
-  end
-end
-
 function fuel_depot:update()
   self:check_drone_validity()
-  self:update_circuit_reader()
   self:update_sticker()
   --game.print("AHOY!")
 end
@@ -162,11 +153,9 @@ end
 function fuel_depot:handle_fuel_request(depot)
   if not self:can_spawn_drone() then return end
 
-  if (self.circuit_writer and self.circuit_writer.valid) then
-    local behavior = self.circuit_writer.get_control_behavior()
-    if behavior and behavior.disabled then
-      return
-    end
+  local behavior = self.entity.get_control_behavior()
+  if behavior and behavior.disabled then
+    return
   end
 
   local amount = self:get_fuel_amount()

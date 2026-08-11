@@ -128,39 +128,15 @@ local tips =
   },
   {
     type = "tips-and-tricks-item",
-    name = "depot-reader",
-    localised_name = {"transport_drones.title_depot_reader"},
-    localised_description = {"transport_drones_pages.depot-reader"},
+    name = "network-reader",
+    localised_name = {"transport_drones.title_network_reader"},
+    localised_description = {"transport_drones_pages.network-reader"},
     order = "j",
     dependencies = {"transport-drones"},
     category = "transport-drones",
     indent = 2,
-    image = path("depot_reader.png"),
-    tag = "[item=transport-depot-reader]"
-  },
-  {
-    type = "tips-and-tricks-item",
-    name = "depot-writer",
-    localised_name = {"transport_drones.title_depot_writer"},
-    localised_description = {"transport_drones_pages.depot-writer"},
-    order = "k",
-    dependencies = {"transport-drones"},
-    category = "transport-drones",
-    indent = 2,
-    image = path("depot_writer.png"),
-    tag = "[item=transport-depot-writer]"
-  },
-  {
-    type = "tips-and-tricks-item",
-    name = "network-reader",
-    localised_name = {"transport_drones.title_network_reader"},
-    localised_description = {"transport_drones_pages.network-reader"},
-    order = "l",
-    dependencies = {"transport-drones"},
-    category = "transport-drones",
-    indent = 2,
     image = path("network_reader.png"),
-    tag = "[item=transport-depot-reader]"
+    tag = "[item=road-network-reader]"
   },
 
 

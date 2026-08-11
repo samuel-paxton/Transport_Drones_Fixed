@@ -69,14 +69,6 @@ local transport_circuits =
   {
     {
       type = "unlock-recipe",
-      recipe = "transport-depot-writer"
-    },
-    {
-      type = "unlock-recipe",
-      recipe = "transport-depot-reader"
-    },
-    {
-      type = "unlock-recipe",
       recipe = "road-network-reader"
     },
   },

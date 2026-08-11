@@ -30,7 +30,6 @@ end
 
 add_depot_lib("request-depot", require("script/depots/request_depot"))
 add_depot_lib("supply-depot", require("script/depots/supply_depot"))
-add_depot_lib("supply-depot-chest", require("script/depots/supply_depot"))
 add_depot_lib("fuel-depot", require("script/depots/fuel_depot"))
 add_depot_lib("mining-depot", require("script/depots/mining_depot"))
 add_depot_lib("fluid-depot", require("script/depots/fluid_depot"))
@@ -174,87 +173,11 @@ local add_to_update_bucket = function(index)
   best_bucket[best_count + 1] = index
 end
 
-local circuit_offsets =
-{
-  [defines.direction.north] = {0, 1},
-  [defines.direction.east] = {-1, 0},
-  [defines.direction.south] = {0, -1},
-  [defines.direction.west] = {1, 0},
-}
-
-local circuit_writer_built = function(entity)
-  local offset = circuit_offsets[entity.direction]
-  if not offset then error("HEUK") end
-  local search_position = entity.position
-  search_position.x = search_position.x + offset[1]
-  search_position.y = search_position.y + offset[2]
-
-  entity.rotatable = false
-
-  for k, found_entity in pairs (entity.surface.find_entities_filtered{position = search_position}) do
-    local this_depot = get_depot(found_entity)
-    if this_depot then
-      if not (this_depot.circuit_writer and this_depot.circuit_writer.valid) then
-        this_depot.circuit_writer = entity
-        this_depot:say("Circuit writer attached")
-        return
-      end
-    end
-  end
-end
-
-local circuit_reader_built = function(entity)
-  local offset = circuit_offsets[entity.direction]
-  if not offset then error("HEUK") end
-  local search_position = entity.position
-  search_position.x = search_position.x + offset[1]
-  search_position.y = search_position.y + offset[2]
-
-  entity.rotatable = false
-
-  local attached = false
-
-  for k, found_entity in pairs (entity.surface.find_entities_filtered{position = search_position}) do
-    local this_depot = get_depot(found_entity)
-    if this_depot then
-      if not (this_depot.circuit_reader and this_depot.circuit_reader.valid) then
-        this_depot.circuit_reader = entity
-        this_depot:say("Circuit reader attached")
-        attached = true
-        break
-      end
-    end
-  end
-
-  if attached then
-    rendering.draw_sprite
-    {
-      sprite = "utility/fluid_indication_arrow",
-      surface = entity.surface,
-      only_in_alt_mode = true,
-      target = entity,
-      target_offset = {offset[1] / 2, offset[2] / 2},
-      orientation_target = entity
-    }
-  end
-
-end
-
 local on_created_entity = function(event)
   local entity = event.entity or event.created_entity
   if not (entity and entity.valid) then return end
 
   local name = entity.name
-
-  if name == "transport-depot-writer" then
-    circuit_writer_built(entity)
-    return
-  end
-
-  if name == "transport-depot-reader" then
-    circuit_reader_built(entity)
-    return
-  end
 
   local depot_lib = depot_libs[name]
   if not depot_lib then
@@ -277,14 +200,6 @@ local on_created_entity = function(event)
   end
   depot:add_to_network()
   add_to_update_bucket(depot.index)
-
-  for k, entity in pairs (entity.surface.find_entities_filtered{name = "transport-depot-writer", radius = entity.get_radius() + 1, position = entity.position}) do
-    circuit_writer_built(entity)
-  end
-
-  for k, entity in pairs (entity.surface.find_entities_filtered{name = "transport-depot-reader", radius = entity.get_radius() + 1, position = entity.position}) do
-    circuit_reader_built(entity)
-  end
 
 end
 
@@ -418,10 +333,6 @@ local get_tags = function(blueprint_entity, surface)
   local name = blueprint_entity.name
   local lib = depot_libs[name]
   if not lib then return end
-
-  if name == "supply-depot" then
-    name = "supply-depot-chest"
-  end
 
   local entity = surface.find_entity(name, blueprint_entity.position)
   if not entity then return end

@@ -19,22 +19,21 @@ local get_corpse_position = function(entity)
 
 end
 
+-- Supply depot used to be two overlapping entities (an inert assembling-machine placeholder for
+-- visuals/circuit, plus a "supply-depot-chest" container underneath doing the actual storage) -
+-- containers now support custom pictures/circuit connectors directly, so it's just the one real
+-- entity. That also means it can no longer be circuit-disabled - plain containers don't support
+-- circuit_condition/enable-disable at all, only reading contents - so a supply depot always
+-- offers its stock to the network; only request/buffer depots are circuit-gateable now.
 function supply_depot.new(entity, tags)
-  local position = entity.position
-  local force = entity.force
-  local surface = entity.surface
-  entity.destructible = false
-  entity.minable_flag = false
+
   entity.rotatable = false
-  entity.disabled_by_script = true
-  local chest = surface.create_entity{name = "supply-depot-chest", position = position, force = force, player = entity.last_user}
 
   local depot =
   {
-    entity = chest,
-    assembler = entity,
+    entity = entity,
     to_be_taken = {},
-    index = tostring(chest.unit_number),
+    index = tostring(entity.unit_number),
     old_contents = {}
   }
   setmetatable(depot, supply_depot.metatable)
@@ -51,7 +50,7 @@ function supply_depot:get_corpse()
     return self.corpse
   end
 
-  local corpse_position = get_corpse_position(self.assembler)
+  local corpse_position = get_corpse_position(self.entity)
   local corpse = self.entity.surface.create_entity{name = "transport-caution-corpse", position = corpse_position}
   corpse.corpse_expires = false
   self.corpse = corpse
@@ -84,17 +83,7 @@ end
 function supply_depot:update_contents()
   local supply = self.road_network.get_network_item_supply(self.network_id)
 
-  local new_contents
-  if (self.circuit_writer and self.circuit_writer.valid) then
-    local behavior = self.circuit_writer.get_control_behavior()
-    if behavior and behavior.disabled then
-      new_contents = {}
-    end
-  end
-
-  if not new_contents then
-    new_contents = util.contents_to_dict(self.entity.get_output_inventory().get_contents())
-  end
+  local new_contents = util.contents_to_dict(self.entity.get_output_inventory().get_contents())
 
   util.for_each_quality_item(self.old_contents, function(quality, name, count)
     if not util.get_quality_item(new_contents, quality, name) then
@@ -110,12 +99,6 @@ function supply_depot:update_contents()
   self.old_contents = new_contents
 
 end
-
---[[
-
-had iron 10
-now iron 5
-]]
 
 function supply_depot:update()
   self:update_contents()
@@ -151,21 +134,7 @@ function supply_depot:remove_from_network()
 end
 
 function supply_depot:on_removed(event)
-
   self.corpse.destroy()
-
-  if self.assembler.valid then
-    self.assembler.destructible = true
-    if event.name == defines.events.on_entity_died then
-      self.assembler.die()
-    else
-      self.assembler.destroy()
-    end
-  end
-
-  if self.entity.valid then
-    self.entity.destroy()
-  end
 end
 
 function supply_depot:on_config_changed()

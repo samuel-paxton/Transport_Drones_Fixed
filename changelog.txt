@@ -4,6 +4,9 @@ Date: 2026-08-09
   Changes:
     - Ported to Factorio 2.1 (prototypes, collision masks, fluid boxes, GUI/circuit APIs, defines.direction, etc).
     - Added Quality support: request/buffer depots can request items at a specific quality (pick it the same way you pick the item, on the depot's recipe selector), and the road network only matches supply/demand of the same quality. Transport drones themselves are always normal quality, regardless of what they're carrying.
+    - Removed the Transport depot writer and Transport depot reader entities - depots can be wired to the circuit network directly now, no separate adapter needed. Turn on 'Read contents' on the depot itself to see what it's holding. The Road network reader is unaffected and still works the same way.
+    - Request and buffer depots can be enabled/disabled with a circuit or logistic condition, wired directly to the depot; set the condition to the requested item with '=' to override its request size instead of just gating it. Supply, mining, and fluid depots always offer their stock to the network now - they can no longer be circuit-disabled, only read.
+    - Supply depot is a single entity now instead of two overlapping ones - fixes the occasional case where clicks or blueprints could catch the wrong one of the pair.
 ---------------------------------------------------------------------------------------------------
 Version: 1.0.16
 Date: 2024-01-07

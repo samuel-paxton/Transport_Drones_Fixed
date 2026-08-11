@@ -142,25 +142,12 @@ set_depot_animation(depot,
   },
 })
 
-local supply_depot = util.copy(depot)
-supply_depot.name = "supply-depot"
-supply_depot.localised_name = {"supply-depot"}
-supply_depot.icon = util.path("data/entities/transport_depot/supply-depot-icon.png")
-supply_depot.minable = {result = "supply-depot", mining_time = 1}
-supply_depot.placeable_by = {item = "supply-depot", count = 1}
-table.insert(supply_depot.flags, "not-deconstructable")
-
-supply_depot.fluid_boxes =
-{
-  {
-    production_type = "input",
-    volume = 5000,
-    pipe_connections = {{ flow_direction="input", direction = defines.direction.north, position = {0, -1} }},
-  },
-}
-supply_depot.fluid_boxes_off_when_no_fluid_recipe = false
-
-
+-- Supply depot used to be two overlapping entities - an inert assembling-machine placeholder
+-- (for the custom visuals + circuit connector, since containers couldn't have either in 1.1) and
+-- a "supply-depot-chest" container underneath it doing the actual item storage. ContainerPrototype
+-- now supports direction_count/picture/circuit_connector directly, so it can just be one real
+-- container - simpler, blueprintable on its own, and no more selection-priority juggling to make
+-- sure clicks/wires land on the right one of the pair.
 local supply_base = function(shift)
   return
   {
@@ -173,37 +160,45 @@ local supply_base = function(shift)
   }
 end
 
-set_depot_animation(supply_depot,
+local supply_depot =
 {
-  north =
+  type = "container",
+  name = "supply-depot",
+  localised_name = {"supply-depot"},
+  icon = util.path("data/entities/transport_depot/supply-depot-icon.png"),
+  icon_size = 216,
+  dying_explosion = depot.dying_explosion,
+  damaged_trigger_effect = depot.damaged_trigger_effect,
+  corpse = depot.corpse,
+  flags = {"placeable-neutral", "player-creation", "not-deconstructable"},
+  max_health = 150,
+  collision_box = collision_box,
+  selection_box = selection_box,
+  fast_replaceable_group = "container",
+  scale_info_icons = false,
+  inventory_size = 100,
+  open_sound = { filename = "__base__/sound/metallic-chest-open.ogg", volume = 0.5 },
+  close_sound = { filename = "__base__/sound/metallic-chest-close.ogg", volume = 0.5 },
+  -- direction_count = 1 entities appear to normalize .direction to north regardless of what's
+  -- placed with, which silently broke corpse-offset placement (corpse ended up on the wrong side
+  -- of the depot, disconnected from the intended road node). Use 4 so direction is respected like
+  -- the old assembler-based version did, even though the picture itself is the same in every
+  -- direction (matching the old animation, which never actually varied by direction either).
+  direction_count = 4,
+  picture = {layers = {supply_base{0, 0.4}}},
+  minable = {result = "supply-depot", mining_time = 1},
+  placeable_by = {item = "supply-depot", count = 1},
+  circuit_wire_max_distance = 10,
+  -- Needs one entry per direction_count (4) - "assembling-machine" is a same-offset-times-4
+  -- vector, which is exactly what a direction-invariant container needs here.
+  circuit_connector = circuit_connector_definitions["assembling-machine"],
+  radius_visualisation_specification =
   {
-    layers =
-    {
-      supply_base{0, 0.4},
-    }
-  },
-  south =
-  {
-    layers =
-    {
-      supply_base{0, 0.4},
-    }
-  },
-  east =
-  {
-    layers =
-    {
-      supply_base{0, 0.4},
-    }
-  },
-  west =
-  {
-    layers =
-    {
-      supply_base{0, 0.4},
-    }
-  },
-})
+    sprite = caution_sprite,
+    distance = 0.5,
+    offset = {0, -2}
+  }
+}
 
 local caution_corpse =
 {
@@ -213,44 +208,6 @@ local caution_corpse =
   animation = caution_sprite,
   remove_on_entity_placement = false,
   remove_on_tile_placement = false
-}
-
-local supply_depot_chest =
-{
-  type = "container",
-  name = "supply-depot-chest",
-  localised_name = {"supply-depot"},
-  icon = util.path("data/entities/transport_depot/supply-depot-icon.png"),
-  icon_size = 216,
-  dying_explosion = depot.dying_explosion,
-  damaged_trigger_effect = depot.damaged_trigger_effect,
-  corpse = depot.corpse,
-  flags = {"placeable-neutral", "player-creation", "not-blueprintable"},
-  max_health = 150,
-  collision_box = collision_box,
-  collision_mask = {layers = {}},
-  selection_priority = 100,
-  fast_replaceable_group = "container",
-  scale_info_icons = false,
-  selection_box = selection_box,
-  inventory_size = 100,
-  open_sound = { filename = "__base__/sound/metallic-chest-open.ogg", volume=0.5 },
-  close_sound = { filename = "__base__/sound/metallic-chest-close.ogg", volume = 0.5 },
-  picture =
-  {
-    layers =
-    {
-      supply_base{0,0}
-    }
-  },
-  picture = util.empty_sprite(),
-  order = "nil",
-  minable = {result = "supply-depot", mining_time = 1},
-  placeable_by = {item = "supply-depot", count = 1},
-  circuit_wire_max_distance = 10,
-  circuit_wire_connection_point = circuit_connector_definitions["roboport"].points,
-  circuit_connector_sprites = circuit_connector_definitions["roboport"].sprites,
-
 }
 
 local category =
@@ -265,8 +222,8 @@ local items =
     type = "item",
     name = "supply-depot",
     localised_name = {"supply-depot"},
-    icon = supply_depot_chest.icon,
-    icon_size = supply_depot_chest.icon_size,
+    icon = supply_depot.icon,
+    icon_size = supply_depot.icon_size,
     flags = {},
     subgroup = "transport-drones",
     order = "e-a-a",
@@ -277,8 +234,8 @@ local items =
     type = "recipe",
     name = "supply-depot",
     localised_name = {"supply-depot"},
-    icon = supply_depot_chest.icon,
-    icon_size = supply_depot_chest.icon_size,
+    icon = supply_depot.icon,
+    icon_size = supply_depot.icon_size,
     --category = "transport",
     enabled = false,
     allow_quality = false,
@@ -596,7 +553,6 @@ data:extend
   supply_depot,
   caution_corpse,
   invisble_corpse,
-  supply_depot_chest,
   category,
   fuel_depot
 }

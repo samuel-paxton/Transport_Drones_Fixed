@@ -62,16 +62,15 @@ function mining_depot:update_contents()
 
   local supply = self.road_network.get_network_item_supply(self.network_id)
 
-  local new_contents
-  if (self.circuit_writer and self.circuit_writer.valid) then
-    local behavior = self.circuit_writer.get_control_behavior()
-    if behavior and behavior.disabled then
-      new_contents = {}
-    end
-  end
-  if not new_contents then
-    new_contents = util.contents_to_dict(self.entity.get_output_inventory().get_contents())
-  end
+  -- Provider-side depots (supply/mining/fluid) always offer their stock to the network - there's
+  -- no circuit-disable for them any more (mirrors supply depot, which can't support it at all now
+  -- it's a plain container - kept uniform across all three rather than mining/fluid being
+  -- circuit-gateable just because their underlying entity happens to support it and supply
+  -- doesn't). Only request/buffer depots are circuit-gateable now. Mining drills also don't
+  -- support a native "read contents" equivalent (only circuit_read_resources, for the ore patch
+  -- remaining underneath them), so there's nothing to replace the old reader signal with either -
+  -- that's simply gone.
+  local new_contents = util.contents_to_dict(self.entity.get_output_inventory().get_contents())
 
   util.for_each_quality_item(self.old_contents, function(quality, name, count)
     if not util.get_quality_item(new_contents, quality, name) then
@@ -85,19 +84,6 @@ function mining_depot:update_contents()
   end)
 
   self.old_contents = new_contents
-
-  if self.circuit_reader and self.circuit_reader.valid then
-    local behavior = self.circuit_reader.get_or_create_control_behavior()
-    local quality, name, count = util.first_quality_item(new_contents)
-    if not name then
-      quality, name, count = util.first_quality_item(util.contents_to_dict(self.entity.get_output_inventory().get_contents()))
-    end
-    local signal
-    if name and count and count > 0 then
-      signal = {signal = {type = "item", name = name, quality = quality}, count = count}
-    end
-    util.set_combinator_signal(behavior, 1, signal)
-  end
 
 end
 

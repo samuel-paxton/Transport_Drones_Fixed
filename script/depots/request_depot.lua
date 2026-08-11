@@ -267,22 +267,6 @@ function request_depot:make_request()
 
 end
 
-function request_depot:update_circuit_reader()
-  if self.circuit_reader and self.circuit_reader.valid then
-    local behavior = self.circuit_reader.get_or_create_control_behavior()
-    local signal
-    if self.item then
-      signal = {signal = {type = self.mode == request_mode.item and "item" or "fluid", name = self.item, quality = self.quality}, count = self:get_current_amount()}
-    end
-    util.set_combinator_signal(behavior, 1, signal)
-    local drone_signal
-    if self.item then
-      drone_signal = {signal = {type = "virtual", name = "signal-D"}, count = self:get_drone_item_count()}
-    end
-    util.set_combinator_signal(behavior, 2, drone_signal)
-  end
-end
-
 function request_depot:update()
   self:check_request_change()
   self:check_fuel_amount()
@@ -291,7 +275,6 @@ function request_depot:update()
   self:update_circuit_writer()
   self:make_request()
   self:update_sticker()
-  self:update_circuit_reader()
 end
 
 function request_depot:suicide_all_drones()
@@ -453,51 +436,41 @@ function request_depot:should_order()
 
 end
 
+-- The depot is wired directly (it's just an assembling machine, no separate writer entity
+-- needed). Normally its circuit condition is a plain enable/disable gate, read straight off
+-- LuaGenericOnOffControlBehavior.disabled - but there's a special case: if the condition compares
+-- the depot's own requested item/quality with '=', its right-hand side is used as a request-size
+-- override instead of a plain gate (see the "circuit-connectors" tip for the player-facing version
+-- of this).
 function request_depot:update_circuit_writer()
-  if not self.circuit_writer then return end
-
-  if not self.circuit_writer.valid then
-    self.circuit_writer = nil
+  local behavior = self.entity.get_control_behavior()
+  if not behavior then
     self.circuit_limit = nil
     return
   end
 
-  local behavior = self.circuit_writer.get_control_behavior()
-  if not behavior then
-    self.circuit_limit = 0
-    --self:say("Depot disabled")
-    return
-  end
-
-  local circuit_condition = behavior.connect_to_logistic_network and behavior.logistic_condition or behavior.circuit_condition
-  if circuit_condition then
-    local condition = circuit_condition.condition
+  -- CircuitConditionDefinition is a flat table (comparator/first_signal/second_signal/constant),
+  -- not nested under its own "condition" key.
+  local condition = behavior.connect_to_logistic_network and behavior.logistic_condition or behavior.circuit_condition
+  if condition then
     if condition.comparator == "=" then
       local first_signal = condition.first_signal
-      if first_signal then
-        if first_signal.name == self.item and (first_signal.quality or util.normal_quality) == self.quality then
-          local count
-          if condition.second_signal and condition.second_signal.name then
-            count = self.circuit_writer.get_merged_signal(condition.second_signal)
-          else
-            count = condition.constant or 0
-          end
-          self.circuit_limit = count
-          --self:say("Set limit "..count)
-          return
+      if first_signal and first_signal.name == self.item and (first_signal.quality or util.normal_quality) == self.quality then
+        local count
+        if condition.second_signal and condition.second_signal.name then
+          -- get_merged_signal was removed - read both wires and add them together instead.
+          count = self.entity.get_signal(condition.second_signal, defines.wire_connector_id.circuit_red, defines.wire_connector_id.circuit_green)
+        else
+          count = condition.constant or 0
         end
+        self.circuit_limit = count
+        --self:say("Set limit "..count)
+        return
       end
-    end
-    if circuit_condition.fulfilled then
-      self.circuit_limit = nil
-      --self:say("Depot enabled")
-      return
     end
   end
 
-  --If there is a writer with no conditions, we just disable the depot.
-  self.circuit_limit = 0
-  --self:say("Depot disabled")
+  self.circuit_limit = behavior.disabled and 0 or nil
 
 end
 

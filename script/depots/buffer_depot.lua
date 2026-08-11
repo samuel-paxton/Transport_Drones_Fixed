@@ -223,15 +223,6 @@ function buffer_depot:update_contents()
 
   self.old_contents = new_contents
 
-  if self.circuit_reader and self.circuit_reader.valid then
-    local behavior = self.circuit_reader.get_or_create_control_behavior()
-    local signal
-    if self.item then
-      signal = {signal = {type = self.mode == request_mode.item and "item" or "fluid", name = self.item, quality = self.quality}, count = self:get_current_amount()}
-    end
-    util.set_combinator_signal(behavior, 1, signal)
-  end
-
 end
 
 local min = math.min
@@ -610,51 +601,37 @@ function buffer_depot:update_sticker()
 
 end
 
+-- See request_depot.lua's update_circuit_writer for the reasoning - same deal here, just wired
+-- directly to this depot's own control behavior instead of a separate writer entity.
 function buffer_depot:update_circuit_writer()
-  if not self.circuit_writer then return end
-
-  if not self.circuit_writer.valid then
-    self.circuit_writer = nil
+  local behavior = self.entity.get_control_behavior()
+  if not behavior then
     self.circuit_limit = nil
     return
   end
 
-  local behavior = self.circuit_writer.get_control_behavior()
-  if not behavior then
-    self.circuit_limit = 0
-    --self:say("Depot disabled")
-    return
-  end
-
-  local circuit_condition = behavior.connect_to_logistic_network and behavior.logistic_condition or behavior.circuit_condition
-  if circuit_condition then
-    local condition = circuit_condition.condition
+  -- CircuitConditionDefinition is a flat table (comparator/first_signal/second_signal/constant),
+  -- not nested under its own "condition" key.
+  local condition = behavior.connect_to_logistic_network and behavior.logistic_condition or behavior.circuit_condition
+  if condition then
     if condition.comparator == "=" then
       local first_signal = condition.first_signal
-      if first_signal then
-        if first_signal.name == self.item and (first_signal.quality or util.normal_quality) == self.quality then
-          local count
-          if condition.second_signal and condition.second_signal.name then
-            count = self.circuit_writer.get_merged_signal(condition.second_signal)
-          else
-            count = condition.constant or 0
-          end
-          self.circuit_limit = count
-          --self:say("Set limit "..count)
-          return
+      if first_signal and first_signal.name == self.item and (first_signal.quality or util.normal_quality) == self.quality then
+        local count
+        if condition.second_signal and condition.second_signal.name then
+          -- get_merged_signal was removed - read both wires and add them together instead.
+          count = self.entity.get_signal(condition.second_signal, defines.wire_connector_id.circuit_red, defines.wire_connector_id.circuit_green)
+        else
+          count = condition.constant or 0
         end
+        self.circuit_limit = count
+        --self:say("Set limit "..count)
+        return
       end
-    end
-    if circuit_condition.fulfilled then
-      self.circuit_limit = nil
-      --self:say("Depot enabled")
-      return
     end
   end
 
-  --If there is a writer with no conditions, we just disable the depot.
-  self.circuit_limit = 0
-  --self:say("Depot disabled")
+  self.circuit_limit = behavior.disabled and 0 or nil
 
 end
 

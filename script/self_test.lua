@@ -140,11 +140,10 @@ local setup = function()
 
   -- Item supply <-> request pair. Stock both normal and uncommon iron-plate, so the quality
   -- test below can check that requests only ever match supply of the same quality.
+  -- supply-depot is a single container entity now (no separate supply-depot-chest).
   local supply = build(surface, force, "supply-depot", {-8, -3}, defines.direction.south)
-  local supply_chest = find_near(surface, "supply-depot-chest", supply.position)
-  if not supply_chest then error("supply-depot-chest not found near supply depot") end
-  supply_chest.insert{name = "iron-plate", count = 4000, quality = "normal"}
-  supply_chest.insert{name = "iron-plate", count = 2000, quality = "uncommon"}
+  supply.insert{name = "iron-plate", count = 4000, quality = "normal"}
+  supply.insert{name = "iron-plate", count = 2000, quality = "uncommon"}
 
   local request = build(surface, force, "request-depot", {-8, 3}, defines.direction.north)
   request.set_recipe("request-iron-plate")
@@ -169,10 +168,57 @@ local setup = function()
   buffer.set_recipe("request-iron-plate")
   give_drones(buffer, 10)
 
-  -- Circuit reader/writer + road network reader, just to make sure they build and update without error.
+  -- Road network reader, just to make sure it still builds and updates without error.
   build(surface, force, "road-network-reader", {16, 0}, defines.direction.north)
-  build(surface, force, "transport-depot-writer", {16, 2}, defines.direction.north)
-  build(surface, force, "transport-depot-reader", {16, 4}, defines.direction.north)
+
+  -- Depots are wired directly now (no separate writer/reader entity). Exercise both circuit
+  -- paths: the plain enable/disable gate, and the special "signal = requested item" request-size
+  -- override - both read straight off the depot's own control behavior.
+
+  -- Override test: wire a combinator outputting "iron-plate = 50" to the plain request depot and
+  -- set its condition to match its own requested item - this should cap its request size at 50
+  -- instead of the full drone-capacity default (which would be much higher).
+  local override_signal = build(surface, force, "constant-combinator", {-8, 8})
+  local override_cb = override_signal.get_or_create_control_behavior()
+  local override_section = override_cb.add_section()
+  override_section.set_slot(1, {value = {type = "item", name = "iron-plate", quality = "normal"}, min = 50})
+  -- constant-combinator has no separate input/output sides (unlike arithmetic/decider
+  -- combinators), so it uses the plain circuit_red/circuit_green connector like any other entity.
+  -- connect_to must be called with dot syntax, not colon - LuaWireConnector methods accessed via
+  -- ":" double up the self argument and misalign the rest (confirmed by testing).
+  local source_connector = override_signal.get_wire_connector(defines.wire_connector_id.circuit_red, true)
+  local target_connector = request.get_wire_connector(defines.wire_connector_id.circuit_red, true)
+  source_connector.connect_to(target_connector)
+  local request_behavior = request.get_or_create_control_behavior()
+  -- CircuitConditionDefinition is a flat table, not nested under its own "condition" key.
+  request_behavior.circuit_condition =
+  {
+    comparator = "=",
+    first_signal = {type = "item", name = "iron-plate", quality = "normal"},
+    second_signal = {type = "item", name = "iron-plate", quality = "normal"}
+  }
+
+  -- Disable test: a dedicated request depot (different item, so it doesn't interfere with the
+  -- override test above) with circuit_enable_disable on and a condition that's never true - it
+  -- should never dispatch a single drone for the whole test.
+  supply.insert{name = "copper-plate", count = 4000, quality = "normal"}
+  local disabled_request = build(surface, force, "request-depot", {-16, 3}, defines.direction.north)
+  disabled_request.set_recipe("request-copper-plate")
+  give_drones(disabled_request, 10)
+  local disabled_behavior = disabled_request.get_or_create_control_behavior()
+  disabled_behavior.circuit_enable_disable = true
+  disabled_behavior.circuit_condition =
+  {
+    comparator = "=",
+    first_signal = {type = "virtual", name = "signal-A"},
+    constant = 1
+  }
+  -- Needs a real wire connection for the condition to actually be evaluated against a network at
+  -- all (an unwired circuit_enable_disable=true doesn't disable anything - nothing to read).
+  -- Wire it to the override combinator above, which never outputs signal-A, so the condition
+  -- still never holds.
+  local disabled_connector = disabled_request.get_wire_connector(defines.wire_connector_id.circuit_red, true)
+  disabled_connector.connect_to(source_connector)
 
   -- Also exercise the road network GUI, if there's a player to open it for (there is one even
   -- in a headless --create'd map; there won't be one on a dedicated server with nobody connected).
@@ -196,6 +242,7 @@ local setup = function()
     quality_request = quality_request,
     fluid_request = fluid_request,
     buffer = buffer,
+    disabled_request = disabled_request,
   }
 end
 
@@ -212,6 +259,10 @@ local snapshot = function()
     quality_item_wrong_quality = refs.quality_request.get_output_inventory().get_item_count{name = "iron-plate", quality = "normal"},
     fluid = refs.fluid_request.get_fluid_count(test_fluid),
     buffer = refs.buffer.get_output_inventory().get_item_count("iron-plate"),
+    -- Circuit disable test: should stay at 0 the whole run, since its condition never holds.
+    -- (The circuit override test reuses "item" above - it's the same request depot, wired to cap
+    -- its request size at 50 instead of the full drone-capacity default.)
+    circuit_disabled_item = refs.disabled_request.get_output_inventory().get_item_count{name = "copper-plate", quality = "normal"},
   }
 end
 
@@ -219,15 +270,15 @@ local report_progress = function()
   if not (refs and refs.request and refs.request.valid) then return end
   local s = snapshot()
   log(string.format(
-    "SELF_TEST_PROGRESS tick=%d item_delivered=%d quality_item_delivered=%d (wrong-quality leakage: %d/%d) fluid_delivered=%.1f buffer_delivered=%d",
-    game.tick, s.item, s.quality_item, s.item_wrong_quality, s.quality_item_wrong_quality, s.fluid, s.buffer))
+    "SELF_TEST_PROGRESS tick=%d item_delivered=%d quality_item_delivered=%d (wrong-quality leakage: %d/%d) fluid_delivered=%.1f buffer_delivered=%d circuit_disabled_item=%d",
+    game.tick, s.item, s.quality_item, s.item_wrong_quality, s.quality_item_wrong_quality, s.fluid, s.buffer, s.circuit_disabled_item))
 end
 
 local tick_handler = function(event)
   local tick = event.tick
 
   if tick == 60 then
-    local ok, err = pcall(setup)
+    local ok, err = xpcall(setup, debug.traceback)
     setup_ok = ok
     if ok then
       refs = err
@@ -250,21 +301,34 @@ local tick_handler = function(event)
 
   if tick == 6000 then
     local s = snapshot()
-    local msg = string.format("item=%d quality_item=%d wrong_quality_leakage=%d/%d fluid=%.1f buffer=%d",
-      s.item, s.quality_item, s.item_wrong_quality, s.quality_item_wrong_quality, s.fluid, s.buffer)
+    local msg = string.format("item=%d quality_item=%d wrong_quality_leakage=%d/%d fluid=%.1f buffer=%d circuit_disabled_item=%d",
+      s.item, s.quality_item, s.item_wrong_quality, s.quality_item_wrong_quality, s.fluid, s.buffer, s.circuit_disabled_item)
 
     local delivered = s.item > 0 and s.quality_item > 0 and s.fluid > 0 and s.buffer > 0
     local no_leakage = s.item_wrong_quality == 0 and s.quality_item_wrong_quality == 0
+    -- The circuit override condition caps the plain request depot's request size at 50 - it
+    -- should have converged there (not kept climbing toward the much higher drone-capacity
+    -- default), with a little slack for in-flight rounding.
+    local circuit_override_ok = s.item >= 45 and s.item <= 55
+    -- The circuit disable condition never holds, so this depot should never have dispatched a
+    -- single drone.
+    local circuit_disabled_ok = s.circuit_disabled_item == 0
 
-    if delivered and no_leakage then
+    if delivered and no_leakage and circuit_override_ok and circuit_disabled_ok then
       log("SELF_TEST_RESULT: PASS - " .. msg)
       game.print("SELF_TEST_RESULT: PASS - " .. msg)
     elseif not delivered then
       log("SELF_TEST_RESULT: FAIL - nothing was delivered - " .. msg)
       game.print("SELF_TEST_RESULT: FAIL - nothing was delivered - " .. msg)
-    else
+    elseif not no_leakage then
       log("SELF_TEST_RESULT: FAIL - quality leaked across requests - " .. msg)
       game.print("SELF_TEST_RESULT: FAIL - quality leaked across requests - " .. msg)
+    elseif not circuit_override_ok then
+      log("SELF_TEST_RESULT: FAIL - circuit request-size override didn't hold (expected ~50) - " .. msg)
+      game.print("SELF_TEST_RESULT: FAIL - circuit request-size override didn't hold (expected ~50) - " .. msg)
+    else
+      log("SELF_TEST_RESULT: FAIL - circuit-disabled depot dispatched a drone anyway - " .. msg)
+      game.print("SELF_TEST_RESULT: FAIL - circuit-disabled depot dispatched a drone anyway - " .. msg)
     end
   end
 end
