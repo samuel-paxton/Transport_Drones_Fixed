@@ -94,7 +94,8 @@ function network_reader:update()
 end
 
 function network_reader:add_to_network()
-  self.network_id = self.road_network.get_node(self.entity.surface.index, self.node_position[1], self.node_position[2]).id
+  local node = self.road_network.get_node(self.entity.surface.index, self.node_position[1], self.node_position[2])
+  self.network_id = node and node.id
 end
 
 function network_reader:remove_from_network()
@@ -102,7 +103,9 @@ function network_reader:remove_from_network()
 end
 
 function network_reader:on_removed()
-  self.corpse.destroy()
+  if self.corpse and self.corpse.valid then
+    self.corpse.destroy()
+  end
 end
 
 return network_reader

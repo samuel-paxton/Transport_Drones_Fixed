@@ -61,6 +61,7 @@ end
 function mining_depot:update_contents()
 
   local supply = self.road_network.get_network_item_supply(self.network_id)
+  if not supply then return end
 
   -- Provider-side depots (supply/mining/fluid) always offer their stock to the network - there's
   -- no circuit-disable for them any more (mirrors supply depot, which can't support it at all now
@@ -121,7 +122,9 @@ function mining_depot:remove_from_network()
 end
 
 function mining_depot:on_removed()
-  self.corpse.destroy()
+  if self.corpse and self.corpse.valid then
+    self.corpse.destroy()
+  end
 end
 
 function mining_depot:on_config_changed()

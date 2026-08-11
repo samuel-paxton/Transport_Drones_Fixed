@@ -82,6 +82,7 @@ end
 function fluid_depot:update_contents()
 
   local supply = self.road_network.get_network_item_supply(self.network_id)
+  if not supply then return end
 
   local new_contents = {}
 
@@ -158,7 +159,9 @@ function fluid_depot:remove_from_network()
 end
 
 function fluid_depot:on_removed()
-  self.corpse.destroy()
+  if self.corpse and self.corpse.valid then
+    self.corpse.destroy()
+  end
 end
 
 function fluid_depot:on_config_changed()

@@ -11,6 +11,8 @@
 local self_test = {}
 local gui = require("script/gui")
 local depot_common = require("script/depot_common")
+local road_network = require("script/road_network")
+local transport_drone = require("script/transport_drone")
 
 local fuel_fluid = "petroleum-gas"
 local test_fluid = "water"
@@ -42,6 +44,38 @@ end
 -- that particular path; script_raised_built is the actual, documented, script-facing hook this
 -- mod's own on_built_entity/on_robot_built_entity/script_raised_built/script_raised_revive
 -- handler already treats identically.
+-- The read half of the blueprint tag round trip, which needs no player: ask a live depot for the
+-- tags it would write into a blueprint, then feed those straight back through script_raised_built
+-- (the same event/shape a construction robot reviving a tagged ghost produces) on a fresh depot
+-- and check read_tags() turned drone_count back into an item-request-proxy.
+local check_blueprint_tag_round_trip = function(surface, force, tagged_entity, position)
+  local depot = depot_common.get_depot(tagged_entity)
+  if not depot then error("no depot registered for the entity to be blueprint-tagged") end
+  if not depot.save_to_blueprint_tags then error("depot has no save_to_blueprint_tags") end
+
+  local tags = depot:save_to_blueprint_tags()
+  if not (tags and tags.drone_count and tags.drone_count > 0) then
+    error("save_to_blueprint_tags returned nothing useful: " .. serpent.line(tags))
+  end
+
+  surface.request_to_generate_chunks(position, 3)
+  surface.force_generate_chunk_requests()
+
+  local fresh = surface.create_entity{name = tagged_entity.name, position = position, direction = defines.direction.south, force = force, raise_built = false}
+  if not (fresh and fresh.valid) then
+    error("failed to build a fresh " .. tagged_entity.name .. " for the tag read-back check")
+  end
+
+  script.raise_event(defines.events.script_raised_built, {entity = fresh, tags = {transport_depot_tags = tags}, tick = game.tick})
+
+  local proxies = surface.find_entities_filtered{name = "item-request-proxy", position = position, radius = 2}
+  if #proxies == 0 then
+    error("tag read-back produced no item-request-proxy - read_tags() didn't apply drone_count")
+  end
+
+  log("SELF_TEST: blueprint tag round trip ok (drone_count=" .. tags.drone_count .. ")")
+end
+
 local check_blueprint_tags = function(player, surface, force)
   local cursor = player.cursor_stack
   cursor.set_stack{name = "blueprint", count = 1}
@@ -79,27 +113,8 @@ local check_blueprint_tags = function(player, surface, force)
   end
   cursor.clear()
 
-  -- Read side: build a fresh fuel depot (not network-connected - that's not what's being tested
-  -- here) and raise script_raised_built with the captured tag, exactly as a robot reviving a
-  -- tagged ghost would. read_tags() should turn drone_count into an item-request-proxy.
-  local paste_position = {0, 40}
-  surface.request_to_generate_chunks(paste_position, 3)
-  surface.force_generate_chunk_requests()
-
-  local fresh = surface.create_entity{name = "fuel-depot", position = paste_position, direction = defines.direction.south, force = force, raise_built = false}
-  if not (fresh and fresh.valid) then
-    error("failed to build fresh fuel-depot for the tag read-back check")
-  end
-
-  script.raise_event(defines.events.script_raised_built, {entity = fresh, tags = {transport_depot_tags = fuel_depot_tag}, tick = game.tick})
-
-  local proxies = surface.find_entities_filtered{name = "item-request-proxy", position = paste_position, radius = 2}
-  log("SELF_TEST: tag read-back produced " .. #proxies .. " item-request-proxy(es) requesting " ..
-    tostring(fuel_depot_tag.drone_count) .. " drones")
-
-  if #proxies == 0 then
-    error("tag read-back produced no item-request-proxy - read_tags() didn't apply drone_count")
-  end
+  -- The read half (feeding a tag back in through script_raised_built) is covered by
+  -- check_blueprint_tag_round_trip, which needs no player and so always runs.
 end
 
 local setup = function()
@@ -244,8 +259,19 @@ local setup = function()
   -- Deliberately NOT setting circuit_enable_disable or connect_to_logistic_network, and NOT wiring
   -- it to anything - this is testing whether an inert/unarmed condition still gets read.
 
-  -- Also exercise the road network GUI, if there's a player to open it for (there is one even
-  -- in a headless --create'd map; there won't be one on a dedicated server with nobody connected).
+  -- A spare depot built off on its own, used later to check that tearing a depot down cleans up
+  -- properly (registry entry dropped, corpse destroyed, no double-teardown). It asks for stone,
+  -- which nothing in the network stocks, so it never actually competes for the goods the
+  -- delivery assertions below measure.
+  local doomed = build(surface, force, "request-depot", {8, 6}, defines.direction.north)
+  doomed.set_recipe("request-stone")
+  give_drones(doomed, 5)
+
+  -- Blueprint tag round trip. The read half needs no player, so it always runs.
+  check_blueprint_tag_round_trip(surface, force, fuel_depot, {0, 40})
+
+  -- The write half goes through on_player_setup_blueprint, so it needs a player with a cursor.
+  -- A headless --create'd map has none; a client-created save does.
   local player = game.players[1]
   if player and player.valid then
     gui.open_gui(player)
@@ -254,20 +280,26 @@ local setup = function()
     log("SELF_TEST: closed road network GUI for player 1")
 
     check_blueprint_tags(player, surface, force)
-    log("SELF_TEST: blueprint tag round-trip ok")
+    log("SELF_TEST: blueprint capture tagging ok")
   else
-    log("SELF_TEST: no player available, skipping GUI/blueprint checks")
+    log("SELF_TEST: no player available, skipping GUI/blueprint-capture checks")
   end
 
   log("SELF_TEST: setup complete")
 
   return {
+    surface = surface,
+    force = force,
+    fuel_depot = fuel_depot,
+    supply = supply,
+    fluid_supply = fluid_supply,
     request = request,
     quality_request = quality_request,
     fluid_request = fluid_request,
     buffer = buffer,
     disabled_request = disabled_request,
     unarmed_request = unarmed_request,
+    doomed = doomed,
   }
 end
 
@@ -302,6 +334,161 @@ local report_progress = function()
     game.tick, s.item, s.quality_item, s.item_wrong_quality, s.quality_item_wrong_quality, s.fluid, s.buffer, s.circuit_disabled_item))
 end
 
+-- Every depot the test built and still tracks, as depot objects rather than entities.
+local tracked_depots = function()
+  local list = {}
+  for _, key in pairs({"fuel_depot", "supply", "request", "quality_request", "fluid_request",
+                       "buffer", "disabled_request", "unarmed_request"}) do
+    local entity = refs[key]
+    if entity and entity.valid then
+      local depot = depot_common.get_depot(entity)
+      if depot then list[key] = depot end
+    end
+  end
+  return list
+end
+
+-- Tearing a depot down has to drop it from the registry and destroy its corpse - and must not
+-- double-teardown (on_entity_died plus the registered on_object_destroyed both fire here).
+local check_depot_removal = function()
+  local doomed = refs.doomed
+  if not (doomed and doomed.valid) then error("the depot earmarked for removal is already gone") end
+
+  local depot = depot_common.get_depot(doomed)
+  if not depot then error("no depot registered for the entity earmarked for removal") end
+  local corpse = depot.corpse
+  local index = depot.index
+
+  doomed.destroy({raise_destroy = true})
+
+  if depot_common.get_depot_by_index(index) then
+    error("depot still registered after its entity was destroyed")
+  end
+  if corpse and corpse.valid then
+    error("depot corpse survived the depot being destroyed")
+  end
+  log("SELF_TEST: depot removal cleaned up registry entry and corpse")
+end
+
+-- Cut the road strip in two and put it back, exercising the network split/merge bookkeeping
+-- (set_node_ids / clear_network) and the depot re-registration it triggers. Goes through
+-- set_tiles' raise_event so the mod's own script_raised_set_tiles handler does the work.
+local check_road_network_split = function()
+  local surface = refs.surface
+  local cut = {4, 0}
+
+  local before = table_size(road_network.get_networks())
+  surface.set_tiles({{name = "grass-1", position = cut}}, true, false, false, true)
+  local after_cut = table_size(road_network.get_networks())
+
+  if after_cut <= before then
+    error(string.format("cutting the road didn't split the network (%d networks before, %d after)", before, after_cut))
+  end
+
+  surface.set_tiles({{name = "transport-drone-road", position = cut}}, true, false, false, true)
+  local after_repair = table_size(road_network.get_networks())
+
+  if after_repair >= after_cut then
+    error(string.format("repairing the road didn't merge the networks back (%d after cut, %d after repair)", after_cut, after_repair))
+  end
+
+  log(string.format("SELF_TEST: road split/merge ok (%d -> %d -> %d networks)", before, after_cut, after_repair))
+end
+
+-- The riskiest path in a 1.1 -> 2.1 upgrade: run the on_configuration_changed handlers in the
+-- same order control.lua registers them, exactly as a version change would. Everything has to
+-- keep working afterwards, which the refill check at the end of the run verifies.
+--
+-- It also has to migrate *in-flight* state, so this deliberately puts a fuel drone on the road
+-- first. depot_common's handler zeroes every depot's reservation counters (they changed shape for
+-- quality support) and relies on transport_drone's handler to re-register whatever in-flight
+-- drones are still carrying; if that misses a case the reservation is silently lost here, and
+-- then subtracted again when the drone delivers, leaving the counter negative forever.
+local run_migration = function()
+  local target = depot_common.get_depot(refs.unarmed_request)
+  local fuel = depot_common.get_depot(refs.fuel_depot)
+  if not (target and fuel) then error("missing depot objects for the in-flight fuel check") end
+
+  -- Empty the target and dispatch by hand rather than waiting for the depot update cycle, so the
+  -- drone is reliably still en route (and not already delivered) when the handlers run below.
+  target:remove_fuel(target:get_fuel_amount())
+  fuel:handle_fuel_request(target)
+
+  local before = target.fuel_on_the_way or 0
+  if before <= 0 then
+    error("couldn't put a fuel delivery in flight to migrate (fuel_on_the_way = " .. tostring(before) .. ")")
+  end
+
+  road_network.on_configuration_changed()
+  depot_common.on_configuration_changed()
+  transport_drone.on_configuration_changed()
+
+  local after = depot_common.get_depot(refs.unarmed_request)
+  after = (after and after.fuel_on_the_way) or 0
+  if after <= 0 then
+    error(string.format("migration lost the in-flight fuel reservation (%s before -> %s after)",
+      tostring(before), tostring(after)))
+  end
+
+  log(string.format("SELF_TEST: ran on_configuration_changed handlers, in-flight fuel reservation survived (%s -> %s)",
+    tostring(before), tostring(after)))
+end
+
+-- Reservation counters must never go negative. fuel_on_the_way in particular is decremented when
+-- a fuel drone delivers, so if the migration above failed to re-register an in-flight drone's
+-- reservation it goes negative and the depot then over-orders fuel forever.
+local check_reservation_accounting = function()
+  for key, depot in pairs (tracked_depots()) do
+    local on_the_way = depot.fuel_on_the_way
+    if on_the_way and on_the_way < 0 then
+      error(string.format("%s has negative fuel_on_the_way (%s)", key, tostring(on_the_way)))
+    end
+    if depot.to_be_taken then
+      for quality, by_name in pairs (depot.to_be_taken) do
+        for name, count in pairs (by_name) do
+          if count < 0 then
+            error(string.format("%s has negative to_be_taken for %s/%s (%d)", key, quality, name, count))
+          end
+        end
+      end
+    end
+  end
+end
+
+-- Empty out two request depots so the final check proves the network is still actively
+-- delivering after the migration, rather than just still holding what it had before it.
+local drain_depots = function()
+  refs.quality_request.get_output_inventory().clear()
+
+  local fluid_depot = depot_common.get_depot(refs.fluid_request)
+  if not fluid_depot then error("no depot registered for the fluid request depot") end
+  fluid_depot:set_output_fluidbox(nil)
+
+  -- Restock the providers too. Draining a request depot destroys goods that came out of the
+  -- supply side, so without this the refill target would be capped by whatever happened to be
+  -- left rather than by whether delivery actually still works.
+  refs.supply.insert{name = "iron-plate", count = 2000, quality = "uncommon"}
+  refs.fluid_supply.insert_fluid{name = test_fluid, amount = 100000}
+
+  local s = snapshot()
+  if s.quality_item ~= 0 then error("draining the quality request depot didn't empty it") end
+  if s.fluid ~= 0 then error("draining the fluid request depot didn't empty it") end
+  log("SELF_TEST: drained the quality item and fluid request depots, restocked the providers")
+end
+
+-- Staged checks, run once each at the given tick. Anything that throws is recorded and reported
+-- as a FAIL at the end of the run rather than taking the game down.
+local phases =
+{
+  [1500] = {name = "depot_removal", run = check_depot_removal},
+  [1800] = {name = "road_split", run = check_road_network_split},
+  [2100] = {name = "migration", run = run_migration},
+  [2400] = {name = "drain", run = drain_depots},
+  [5900] = {name = "reservation_accounting", run = check_reservation_accounting},
+}
+
+local phase_failures = {}
+
 local tick_handler = function(event)
   local tick = event.tick
 
@@ -319,6 +506,16 @@ local tick_handler = function(event)
 
   if not setup_ok then return end
 
+  local phase = phases[tick]
+  if phase then
+    local ok, err = xpcall(phase.run, debug.traceback)
+    if not ok then
+      phase_failures[#phase_failures + 1] = phase.name
+      log("SELF_TEST: PHASE_FAIL " .. phase.name .. " - " .. tostring(err))
+      game.print("SELF_TEST: PHASE_FAIL " .. phase.name .. " - " .. tostring(err))
+    end
+  end
+
   if tick % 1200 == 0 then
     local ok, err = pcall(report_progress)
     if not ok then
@@ -332,7 +529,10 @@ local tick_handler = function(event)
     local msg = string.format("item=%d quality_item=%d wrong_quality_leakage=%d/%d fluid=%.1f buffer=%d circuit_disabled_item=%d unarmed_item=%d",
       s.item, s.quality_item, s.item_wrong_quality, s.quality_item_wrong_quality, s.fluid, s.buffer, s.circuit_disabled_item, s.unarmed_item)
 
-    local delivered = s.item > 0 and s.quality_item > 0 and s.fluid > 0 and s.buffer > 0
+    -- quality_item and fluid were emptied out (and their providers restocked) after the
+    -- migration, so these climbing back to a substantial level is what proves the network still
+    -- actively delivers post-migration, not merely that it delivered once before it.
+    local delivered = s.item > 0 and s.quality_item >= 500 and s.fluid >= 5000 and s.buffer > 0
     local no_leakage = s.item_wrong_quality == 0 and s.quality_item_wrong_quality == 0
     -- The circuit override condition caps the plain request depot's request size at 50 - it
     -- should have converged there (not kept climbing toward the much higher drone-capacity
@@ -344,10 +544,15 @@ local tick_handler = function(event)
     -- The unarmed depot's condition is never toggled on, so it must behave like it has no
     -- condition at all - well past the 50 a wrongly-applied override would cap it at.
     local unarmed_ok = s.unarmed_item >= 500
+    local phases_ok = #phase_failures == 0
 
-    if delivered and no_leakage and circuit_override_ok and circuit_disabled_ok and unarmed_ok then
+    if delivered and no_leakage and circuit_override_ok and circuit_disabled_ok and unarmed_ok and phases_ok then
       log("SELF_TEST_RESULT: PASS - " .. msg)
       game.print("SELF_TEST_RESULT: PASS - " .. msg)
+    elseif not phases_ok then
+      local failed = table.concat(phase_failures, ", ")
+      log("SELF_TEST_RESULT: FAIL - staged checks failed (" .. failed .. ") - " .. msg)
+      game.print("SELF_TEST_RESULT: FAIL - staged checks failed (" .. failed .. ") - " .. msg)
     elseif not delivered then
       log("SELF_TEST_RESULT: FAIL - nothing was delivered - " .. msg)
       game.print("SELF_TEST_RESULT: FAIL - nothing was delivered - " .. msg)

@@ -196,6 +196,7 @@ function buffer_depot:update_contents()
   if not self.network_id then return end
 
   local supply = self.road_network.get_network_item_supply(self.network_id)
+  if not supply then return end
 
   local new_contents = {}
 
@@ -224,12 +225,16 @@ local min = math.min
 function buffer_depot:dispatch_drone(depot, count)
 
   local drone = self.transport_drone.new(self, self.item)
+  -- See request_depot:dispatch_drone - new() can return nil if the entity couldn't be created.
+  if not drone then return end
+
   drone:pickup_from_supply(depot, self.quality, self.item, count)
   self:remove_fuel(fuel_amount_per_drone)
 
   self.drones[drone.index] = drone
 
   self:update_sticker()
+  return true
 end
 
 
@@ -288,11 +293,13 @@ function buffer_depot:make_request()
 
   local count = supply_depots[best_index]
   if request_size >= count then
-    supply_depots[best_index] = nil
-    self:dispatch_drone(best_buffer, count)
+    if self:dispatch_drone(best_buffer, count) then
+      supply_depots[best_index] = nil
+    end
   else
-    supply_depots[best_index] = count - request_size
-    self:dispatch_drone(best_buffer, request_size)
+    if self:dispatch_drone(best_buffer, request_size) then
+      supply_depots[best_index] = count - request_size
+    end
   end
 
 end
@@ -300,11 +307,14 @@ end
 
 function buffer_depot:update()
   self:check_request_change()
+  -- Has to come before update_contents: that's what decides whether this depot offers its stock
+  -- to the network at all (circuit_limit == 0 means disabled), so reading last cycle's value
+  -- there would keep a just-disabled buffer advertising its contents for one more update.
+  self:update_circuit_writer()
   self:update_contents()
   self:check_fuel_amount()
   self:check_drone_validity()
   self:check_drone_amount()
-  self:update_circuit_writer()
   self:make_request()
   self:update_sticker()
 end
@@ -665,7 +675,9 @@ end
 
 function buffer_depot:on_removed()
   self:suicide_all_drones()
-  self.corpse.destroy()
+  if self.corpse and self.corpse.valid then
+    self.corpse.destroy()
+  end
 end
 
 function buffer_depot:on_config_changed()

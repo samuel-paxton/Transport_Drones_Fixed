@@ -24,8 +24,23 @@ local new_id = function()
   return id
 end
 
+-- A node can outlive the network entry its id points at: clear_network() re-homes the depots it
+-- knows about and then drops the entry, but any node still carrying that id (which happens when a
+-- network's nodes got disconnected without the id split being detected) would afterwards resolve
+-- to nothing, and every caller here dereferences the result. Rebuild the entry on demand instead
+-- so a stale id self-heals into an empty network rather than crashing the depot update loop.
 local get_network_by_id = function(id)
-  return script_data.networks[id]
+  if not id then return end
+  local network = script_data.networks[id]
+  if not network then
+    network =
+    {
+      item_supply = {},
+      depots = {}
+    }
+    script_data.networks[id] = network
+  end
+  return network
 end
 
 local neighbor_offsets =
@@ -280,7 +295,7 @@ local clear_network = function(id)
   --print("Clearing "..id)
   local network = script_data.networks[id]
 
-  --if not network then return end
+  if not network then return end
 
   for category, depots in pairs (network.depots) do
     for id, depot in pairs (depots) do
@@ -300,11 +315,12 @@ local road_network = {}
 -- lookup rather than something every name lookup has to unpack.
 road_network.get_network_item_supply = function(id)
   local network = get_network_by_id(id)
-  return network.item_supply
+  return network and network.item_supply
 end
 
 road_network.get_supply_depots = function(id, name, quality)
   local network = get_network_by_id(id)
+  if not network then return end
   local by_quality = network.item_supply[quality or util.normal_quality]
   return by_quality and by_quality[name]
 end
@@ -449,6 +465,10 @@ road_network.add_depot = function(depot, category)
   local x, y = depot.node_position[1], depot.node_position[2]
   local surface = depot.entity.surface.index
   local node = get_node(surface, x, y)
+  -- Every caller is supposed to have placed/confirmed the node first (see depot_common's
+  -- attempt_to_place_node / add_depot_to_node), but a depot can be re-added mid-teardown while
+  -- another mod is ripping tiles out from under it - leave it network-less rather than crashing.
+  if not node then return end
 
   local network = get_network_by_id(node.id)
 
@@ -505,26 +525,6 @@ local rect_distance = function(a, b)
   return dx + dy
 end
 local sort = table.sort
-
-local prune_networks = function()
-  local valid = {}
-  for index, surface_map in pairs(script_data.node_map) do
-    for x, y_map in pairs (surface_map) do
-      for y, id in pairs (y_map) do
-        if not valid[id] then
-          valid[id] = true
-        end
-      end
-    end
-  end
-
-  for id, network in pairs (script_data.networks) do
-    if not valid[id] then
-      clear_network(id)
-    end
-  end
-
-end
 
 local floor = math.floor
 

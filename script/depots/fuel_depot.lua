@@ -218,7 +218,9 @@ function fuel_depot:remove_fuel(amount)
 end
 
 function fuel_depot:on_removed()
-  self.corpse.destroy()
+  if self.corpse and self.corpse.valid then
+    self.corpse.destroy()
+  end
 end
 
 return fuel_depot

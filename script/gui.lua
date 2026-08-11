@@ -151,13 +151,18 @@ local update_contents_table = function(contents_table, network, filter, sort)
 
     if item_locale then
       local key = quality_item_key(quality, name)
-      seen[key] = true
       local visible = (not filter) or (filter.name == name and (filter.quality or util.normal_quality) == quality)
       local flow = contents_table[key]
-      if visible then
-        sum = floor(sum)
+      sum = floor(sum)
 
-        if sum > 0 then
+      -- An item the network has run out of leaves an empty-but-still-present entry behind in
+      -- item_supply (set_network_supply only clears the per-depot count, not the name it hung
+      -- off), so it keeps showing up here with a sum of 0. Deliberately don't mark those seen -
+      -- the cleanup loop below then drops the row, instead of leaving it on screen forever still
+      -- displaying the last count it had.
+      if sum > 0 then
+        seen[key] = true
+        if visible then
           if not flow then
             flow = contents_table.add{type = "flow", name = key}
             flow.add
@@ -178,8 +183,8 @@ local update_contents_table = function(contents_table, network, filter, sort)
             flow.count.tooltip = sum
           end
         end
+        if flow then flow.visible = visible end
       end
-      if flow then flow.visible = visible end
     end
   end
   for k, gui in pairs (contents_table.children) do
@@ -559,7 +564,7 @@ local update_request_depot_gui = function(depot, gui, filter)
           type = "sprite-button",
           sprite = item_locale.icon,
           quality = depot.quality,
-          number = current_count,
+          number = requested_count,
           tooltip = requested_count,
           style = "transparent_slot",
           name = "count"
@@ -731,6 +736,7 @@ local refresh_gui = function(player, force)
   local network = get_selected_network(player)
   if not network then
     close_gui(player)
+    return
   end
 
   refresh_contents_tab(player, force)

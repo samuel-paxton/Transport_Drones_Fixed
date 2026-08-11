@@ -774,23 +774,28 @@ local follow_drone_hotkey = function(event)
     return
   end
 
-  local units = player.surface.find_entities_filtered{type = "unit", force = player.force, position = player.position, radius = radius}
+  local nearby = player.surface.find_entities_filtered{type = "unit", force = player.force, position = player.position, radius = radius}
 
-  for k, unit in pairs (units) do
+  -- get_closest takes a plain array, so the rideable ones have to be collected into a fresh
+  -- densely-packed table - nil'ing entries out of `nearby` in place would leave holes in the
+  -- middle of the array and silently truncate (or error on) the conversion.
+  local units = {}
+  local count = 0
+  for k, unit in pairs (nearby) do
     local drone = get_drone(tostring(unit.unit_number))
-    if not drone then
-      units[k] = nil
-    elseif drone.riding_player then
-      units[k] = nil
+    if drone and not drone.riding_player then
+      count = count + 1
+      units[count] = unit
     end
   end
 
-  if not next(units) then return end
+  if count == 0 then return end
 
   local closest = player.surface.get_closest(player.position, units)
   if not closest then return end
 
   local drone = get_drone(tostring(closest.unit_number))
+  if not drone then return end
   player_enter_drone(player, drone)
 
 end
@@ -887,14 +892,18 @@ transport_drone.on_configuration_changed = function()
 
   for k, drone in pairs (script_data.drones) do
     if drone.entity.valid then
-      if drone.state == states.going_to_supply then
+      -- depot_common's on_configuration_changed wipes every depot's to_be_taken/fuel_on_the_way
+      -- (they changed shape for quality support), so any reservation an in-flight drone is
+      -- holding has to be re-registered here, or it's silently lost - and then subtracted again
+      -- when the drone delivers, driving the depot's accounting negative.
+      if drone.state == states.going_to_supply and drone.supply_depot then
         local count = drone.requested_count or 0
         local item = drone.requested_item or drone.request_depot.item
         local quality = drone.requested_quality or drone.request_depot.quality
         drone:pickup_from_supply(drone.supply_depot, quality, item, count)
       end
-      if drone.state == states.deliver_fuel then
-        drone.target_depot.fuel_on_the_way = drone.target_depot.fuel_on_the_way + (drone.fuel_amount or 0)
+      if drone.state == states.delivering_fuel and drone.target_depot then
+        drone.target_depot.fuel_on_the_way = (drone.target_depot.fuel_on_the_way or 0) + (drone.fuel_amount or 0)
       end
     else
       script_data.drones[k] = nil

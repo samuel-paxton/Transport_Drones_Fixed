@@ -406,7 +406,7 @@ local fuel_signal =
 fuel_depot.fixed_recipe = "fuel-depots"
 fuel_depot.crafting_categories = {"fuel-depot"}
 fuel_depot.minable.result = "fuel-depot"
-fuel_depot.placeable_by = {item = "fuel-depot", count = 1},
+fuel_depot.placeable_by = {item = "fuel-depot", count = 1}
 
 data:extend(fuel_depot_items)
 data:extend{fuel_signal}

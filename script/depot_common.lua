@@ -132,8 +132,15 @@ local add_depot_to_node = function(depot)
   local node = road_network.get_node(depot.surface_index, depot.node_position[1], depot.node_position[2])
 
   if not node then
+    -- Drop it from the registry *before* destroying the entity: the entity is registered with
+    -- script.register_on_object_destroyed, so destroying it raises on_object_destroyed, which
+    -- would otherwise find the depot still listed and tear it down a second time (double
+    -- on_removed - suiciding already-dead drones, destroying an already-destroyed corpse).
+    script_data.depots[depot.index] = nil
     depot:on_removed({})
-    depot.entity.destroy()
+    if depot.entity.valid then
+      depot.entity.destroy()
+    end
     --log("Wtf, depot with no node... killing it"..serpent.line(depot))
     return true
   end

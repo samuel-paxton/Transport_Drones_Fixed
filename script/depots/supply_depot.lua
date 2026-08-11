@@ -82,6 +82,7 @@ end
 
 function supply_depot:update_contents()
   local supply = self.road_network.get_network_item_supply(self.network_id)
+  if not supply then return end
 
   local new_contents = util.contents_to_dict(self.entity.get_output_inventory().get_contents())
 
@@ -134,7 +135,9 @@ function supply_depot:remove_from_network()
 end
 
 function supply_depot:on_removed(event)
-  self.corpse.destroy()
+  if self.corpse and self.corpse.valid then
+    self.corpse.destroy()
+  end
 end
 
 function supply_depot:on_config_changed()

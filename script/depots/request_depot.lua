@@ -258,11 +258,13 @@ function request_depot:make_request()
 
   local count = supply_depots[best_index]
   if request_size >= count then
-    supply_depots[best_index] = nil
-    self:dispatch_drone(best_buffer, count)
+    if self:dispatch_drone(best_buffer, count) then
+      supply_depots[best_index] = nil
+    end
   else
-    supply_depots[best_index] = count - request_size
-    self:dispatch_drone(best_buffer, request_size)
+    if self:dispatch_drone(best_buffer, request_size) then
+      supply_depots[best_index] = count - request_size
+    end
   end
 
 end
@@ -490,12 +492,18 @@ local min = math.min
 function request_depot:dispatch_drone(depot, count)
 
   local drone = self.transport_drone.new(self, self.item)
+  -- new() returns nil when the drone entity couldn't be created at all. Bail out instead of
+  -- dereferencing it; make_request only books the supply against this depot once dispatch
+  -- actually succeeded.
+  if not drone then return end
+
   drone:pickup_from_supply(depot, self.quality, self.item, count)
   self:remove_fuel(fuel_amount_per_drone)
 
   self.drones[drone.index] = drone
 
   self:update_sticker()
+  return true
 end
 
 local valid_item_cache = {}
@@ -593,7 +601,12 @@ end
 
 function request_depot:on_removed()
   self:suicide_all_drones()
-  self.corpse.destroy()
+  -- The corpse is a real entity that other things can destroy (and on_removed can run twice in
+  -- some teardown orders), so never assume it's still there - destroy() on an invalid LuaEntity
+  -- errors.
+  if self.corpse and self.corpse.valid then
+    self.corpse.destroy()
+  end
 end
 
 function request_depot:on_config_changed()
