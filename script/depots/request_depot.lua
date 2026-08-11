@@ -449,9 +449,21 @@ function request_depot:update_circuit_writer()
     return
   end
 
+  -- circuit_condition/logistic_condition stay set (and readable) even while their own
+  -- circuit_enable_disable/connect_to_logistic_network toggle is off - e.g. a player who set a
+  -- condition, then unchecked the toggle, still has that condition sitting there. Only look at it
+  -- while the matching toggle is actually on, or a stale condition could apply as a "phantom"
+  -- request-size override the player never asked for (confirmed by self_test.lua's unarmed_item
+  -- case - an unwired, untoggled depot with a leftover self-match condition was still being capped).
+  --
   -- CircuitConditionDefinition is a flat table (comparator/first_signal/second_signal/constant),
   -- not nested under its own "condition" key.
-  local condition = behavior.connect_to_logistic_network and behavior.logistic_condition or behavior.circuit_condition
+  local condition
+  if behavior.connect_to_logistic_network then
+    condition = behavior.logistic_condition
+  elseif behavior.circuit_enable_disable then
+    condition = behavior.circuit_condition
+  end
   if condition then
     if condition.comparator == "=" then
       local first_signal = condition.first_signal

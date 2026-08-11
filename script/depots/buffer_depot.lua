@@ -191,11 +191,6 @@ function buffer_depot:check_drone_amount()
 
 end
 
-function buffer_depot:offer_item()
-  if not self.item then return end
-  self:check_requests_for_item(self.item, self:get_current_amount())
-end
-
 function buffer_depot:update_contents()
 
   if not self.network_id then return end
@@ -316,7 +311,16 @@ end
 
 function buffer_depot:suicide_all_drones()
   for k, drone in pairs (self.drones) do
-    drone:suicide()
+    -- drone.entity can already be invalid here (check_drone_validity() is the usual place that
+    -- cleans these up, but this can run earlier in the same update() via check_request_change) -
+    -- drone:suicide() assumes a valid entity (it accesses self.entity.surface), so guard the same
+    -- way request_depot:suicide_all_drones() does.
+    if drone.entity.valid then
+      drone:suicide()
+    else
+      drone:clear_drone_data()
+      self:remove_drone(drone)
+    end
   end
 end
 
@@ -610,9 +614,19 @@ function buffer_depot:update_circuit_writer()
     return
   end
 
+  -- circuit_condition/logistic_condition stay set (and readable) even while their own
+  -- circuit_enable_disable/connect_to_logistic_network toggle is off - only look at it while the
+  -- matching toggle is actually on, or a stale condition could apply as a "phantom" request-size
+  -- override the player never asked for (see request_depot.lua's update_circuit_writer).
+  --
   -- CircuitConditionDefinition is a flat table (comparator/first_signal/second_signal/constant),
   -- not nested under its own "condition" key.
-  local condition = behavior.connect_to_logistic_network and behavior.logistic_condition or behavior.circuit_condition
+  local condition
+  if behavior.connect_to_logistic_network then
+    condition = behavior.logistic_condition
+  elseif behavior.circuit_enable_disable then
+    condition = behavior.circuit_condition
+  end
   if condition then
     if condition.comparator == "=" then
       local first_signal = condition.first_signal

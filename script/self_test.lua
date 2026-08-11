@@ -144,6 +144,7 @@ local setup = function()
   local supply = build(surface, force, "supply-depot", {-8, -3}, defines.direction.south)
   supply.insert{name = "iron-plate", count = 4000, quality = "normal"}
   supply.insert{name = "iron-plate", count = 2000, quality = "uncommon"}
+  supply.insert{name = "steel-plate", count = 4000, quality = "normal"}
 
   local request = build(surface, force, "request-depot", {-8, 3}, defines.direction.north)
   request.set_recipe("request-iron-plate")
@@ -190,6 +191,10 @@ local setup = function()
   local target_connector = request.get_wire_connector(defines.wire_connector_id.circuit_red, true)
   source_connector.connect_to(target_connector)
   local request_behavior = request.get_or_create_control_behavior()
+  -- The override only takes effect while circuit_enable_disable is actually on (see
+  -- update_circuit_writer) - a condition sitting in a depot that never toggled circuit control on
+  -- must stay inert, which is exactly what the "unarmed" depot below checks.
+  request_behavior.circuit_enable_disable = true
   -- CircuitConditionDefinition is a flat table, not nested under its own "condition" key.
   request_behavior.circuit_condition =
   {
@@ -220,6 +225,25 @@ local setup = function()
   local disabled_connector = disabled_request.get_wire_connector(defines.wire_connector_id.circuit_red, true)
   disabled_connector.connect_to(source_connector)
 
+  -- Regression check: a configured circuit_condition should be inert while its own
+  -- circuit_enable_disable/connect_to_logistic_network toggle is off (e.g. a player set a
+  -- condition, then unchecked the toggle) - it must not be silently read as a request-size
+  -- override anyway. This depot has a self-match condition set but never armed, and isn't even
+  -- wired to anything, so it should request and receive its full uncapped amount just like an
+  -- ordinary request depot.
+  local unarmed_request = build(surface, force, "request-depot", {-16, 6}, defines.direction.north)
+  unarmed_request.set_recipe("request-steel-plate")
+  give_drones(unarmed_request, 10)
+  local unarmed_behavior = unarmed_request.get_or_create_control_behavior()
+  unarmed_behavior.circuit_condition =
+  {
+    comparator = "=",
+    first_signal = {type = "item", name = "steel-plate", quality = "normal"},
+    constant = 50
+  }
+  -- Deliberately NOT setting circuit_enable_disable or connect_to_logistic_network, and NOT wiring
+  -- it to anything - this is testing whether an inert/unarmed condition still gets read.
+
   -- Also exercise the road network GUI, if there's a player to open it for (there is one even
   -- in a headless --create'd map; there won't be one on a dedicated server with nobody connected).
   local player = game.players[1]
@@ -243,6 +267,7 @@ local setup = function()
     fluid_request = fluid_request,
     buffer = buffer,
     disabled_request = disabled_request,
+    unarmed_request = unarmed_request,
   }
 end
 
@@ -263,6 +288,9 @@ local snapshot = function()
     -- (The circuit override test reuses "item" above - it's the same request depot, wired to cap
     -- its request size at 50 instead of the full drone-capacity default.)
     circuit_disabled_item = refs.disabled_request.get_output_inventory().get_item_count{name = "copper-plate", quality = "normal"},
+    -- Unarmed-condition test: should climb well past the 50 its leftover condition would cap it
+    -- at if that condition were wrongly being read despite its toggle being off.
+    unarmed_item = refs.unarmed_request.get_output_inventory().get_item_count{name = "steel-plate", quality = "normal"},
   }
 end
 
@@ -301,8 +329,8 @@ local tick_handler = function(event)
 
   if tick == 6000 then
     local s = snapshot()
-    local msg = string.format("item=%d quality_item=%d wrong_quality_leakage=%d/%d fluid=%.1f buffer=%d circuit_disabled_item=%d",
-      s.item, s.quality_item, s.item_wrong_quality, s.quality_item_wrong_quality, s.fluid, s.buffer, s.circuit_disabled_item)
+    local msg = string.format("item=%d quality_item=%d wrong_quality_leakage=%d/%d fluid=%.1f buffer=%d circuit_disabled_item=%d unarmed_item=%d",
+      s.item, s.quality_item, s.item_wrong_quality, s.quality_item_wrong_quality, s.fluid, s.buffer, s.circuit_disabled_item, s.unarmed_item)
 
     local delivered = s.item > 0 and s.quality_item > 0 and s.fluid > 0 and s.buffer > 0
     local no_leakage = s.item_wrong_quality == 0 and s.quality_item_wrong_quality == 0
@@ -313,8 +341,11 @@ local tick_handler = function(event)
     -- The circuit disable condition never holds, so this depot should never have dispatched a
     -- single drone.
     local circuit_disabled_ok = s.circuit_disabled_item == 0
+    -- The unarmed depot's condition is never toggled on, so it must behave like it has no
+    -- condition at all - well past the 50 a wrongly-applied override would cap it at.
+    local unarmed_ok = s.unarmed_item >= 500
 
-    if delivered and no_leakage and circuit_override_ok and circuit_disabled_ok then
+    if delivered and no_leakage and circuit_override_ok and circuit_disabled_ok and unarmed_ok then
       log("SELF_TEST_RESULT: PASS - " .. msg)
       game.print("SELF_TEST_RESULT: PASS - " .. msg)
     elseif not delivered then
@@ -326,9 +357,12 @@ local tick_handler = function(event)
     elseif not circuit_override_ok then
       log("SELF_TEST_RESULT: FAIL - circuit request-size override didn't hold (expected ~50) - " .. msg)
       game.print("SELF_TEST_RESULT: FAIL - circuit request-size override didn't hold (expected ~50) - " .. msg)
-    else
+    elseif not circuit_disabled_ok then
       log("SELF_TEST_RESULT: FAIL - circuit-disabled depot dispatched a drone anyway - " .. msg)
       game.print("SELF_TEST_RESULT: FAIL - circuit-disabled depot dispatched a drone anyway - " .. msg)
+    else
+      log("SELF_TEST_RESULT: FAIL - unarmed circuit condition was applied anyway - " .. msg)
+      game.print("SELF_TEST_RESULT: FAIL - unarmed circuit condition was applied anyway - " .. msg)
     end
   end
 end
