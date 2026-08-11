@@ -13,6 +13,7 @@ tile.placeable_by = {{item = "road", count = 1}}
 tile.map_color={r=86/2, g=82/2, b=74/2}
 tile.walking_speed_modifier = 1.5
 tile.vehicle_friction_modifier = 0.9
+tile.decorative_removal_probability = 1.0
 
 
 local item =
@@ -53,6 +54,7 @@ better_tile.placeable_by = {{item = "fast-road", count = 1}}
 better_tile.map_color={r=86/2, g=82/2, b=74/2}
 better_tile.walking_speed_modifier = 2
 better_tile.vehicle_friction_modifier = 0.8
+better_tile.decorative_removal_probability = 1.0
 
 local better_item =
 {
