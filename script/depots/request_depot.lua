@@ -447,7 +447,7 @@ end
 -- needed). Normally its circuit condition is a plain enable/disable gate, read straight off
 -- LuaGenericOnOffControlBehavior.disabled - but there's a special case: if the condition compares
 -- the depot's own requested item/quality with '=', its right-hand side is used as a request-size
--- override instead of a plain gate (see the "circuit-connectors" tip for the player-facing version
+-- override instead of a plain gate (see the "request-depots" tip for the player-facing version
 -- of this).
 function request_depot:update_circuit_writer()
   local behavior = self.entity.get_control_behavior()

@@ -116,25 +116,13 @@ local tips =
   },
   {
     type = "tips-and-tricks-item",
-    name = "circuit-connectors",
-    localised_name = {"transport_drones.title_circuit_connectors"},
-    localised_description = {"transport_drones_pages.circuit-connectors"},
-    order = "i",
-    dependencies = {"transport-drones"},
-    category = "transport-drones",
-    indent = 1,
-    image = path("circuit_connectors.jpg"),
-    tag = "[technology=transport-depot-circuits]"
-  },
-  {
-    type = "tips-and-tricks-item",
     name = "network-reader",
     localised_name = {"transport_drones.title_network_reader"},
     localised_description = {"transport_drones_pages.network-reader"},
     order = "j",
     dependencies = {"transport-drones"},
     category = "transport-drones",
-    indent = 2,
+    indent = 1,
     image = path("network_reader.jpg"),
     tag = "[item=road-network-reader]"
   },
