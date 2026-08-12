@@ -42,47 +42,40 @@ local sprite_base = util.copy(data.raw.car.tank)
 util.recursive_hack_make_hr(sprite_base) -- no-op on modern (non hr_version) sprites, kept just in case
 util.recursive_hack_scale(sprite_base, 0.5)
 
-local make_body_animation = function(shift)
-  local animation = util.copy(sprite_base.animation)
-  util.recursive_hack_shift(animation, shift)
-  return animation
+local make_body_animation = function()
+  return util.copy(sprite_base.animation)
 end
 
--- Units default to steering tuned for biter-sized creatures (this used to be a single global
--- MapSetting shared by every unit in the game, so a mod had no way to override it - as of the
--- 2.0 prototype changes, steering moved onto UnitPrototype/SpiderUnitPrototype, so each unit type
--- can now be tuned individually). Our drones are tiny (collision_box is basically a point) and
--- only collide with tiles (see data-final-fixes.lua), so give them a tiny steering footprint
--- instead of inheriting a radius/force sized for a small biter - that mismatch was a source of
--- unnecessary "jostling" jitter when several drones were moving near each other around a depot.
 local drone_steering =
 {
-  move = {radius = 0.1, separation_force = 0.01, separation_factor = 0.5},
-  stay = {radius = 0.1, separation_force = 0.01, separation_factor = 0.5}
+  move = {radius = 0.5, separation_force = 0.1, separation_factor = 0.5},
+  stay = {radius = 0.5, separation_force = 0.1, separation_factor = 0.5},
+  force_unit_fuzzy_goto_behavior = true
 }
 
-local make_unit = function(k)
+-- There used to be `shared.variation_count` (50) of these, identical apart from a random shift of
+-- up to ~0.33 tiles applied to the body animation, sticker_box, selection_box and light. The point
+-- wasn't 50 different-looking drones - it was to stop drones being drawn exactly on top of each
+-- other when several converge on the same depot. That scatter now comes from the drones physically
+-- stopping at different spots instead (see the arrival radius in transport_drone:go_to_depot), so
+-- one prototype is enough and the body, selection box and cargo overlay all line up honestly with
+-- where the drone actually is.
+--
+-- Deliberately still named "transport-drone-1" rather than plain "transport-drone": the name is
+-- what pollution and kill statistics are recorded against (script/transport_drone.lua references
+-- it by string), so renaming it would orphan the stats history already in players' saves.
+local unit_name = name.."-1"
 
-  local shift = {(math.random() - 0.5) / 1.5, (math.random() - 0.5) / 1.5}
+local make_unit = function()
 
-  local selection_box =
-  {
-    {
-      -0.3 + shift[1],
-      -0.3 + shift[2],
-    },
-    {
-      0.3 + shift[1],
-      0.3 + shift[2],
-    }
-  }
+  local selection_box = {{-0.3, -0.3}, {0.3, 0.3}}
 
-  local darkness = 0.3  + math.random() / 5
+  local darkness = 0.4
 
   local unit =
   {
     type = "unit",
-    name = name.."-"..k,
+    name = unit_name,
     localised_name = {name},
     icon = util.path("data/entities/transport_drone/transport-drone-icon.png"),
     icon_size = 112,
@@ -106,7 +99,11 @@ local make_unit = function(k)
     --minable = {result = name, mining_time = 2},
     collision_box = {{-0.01, -0.01}, {0.01, 0.01}},
     selection_box = selection_box,
-    sticker_box = {shift, shift},
+    -- Zero-sized box at the drone's own position. transport_drone:update_sticker reads
+    -- prototype.sticker_box.left_top as the offset to hang the cargo indicator (and the planned
+    -- tray overlay) off, which used to be how it found this variation's random body shift - with
+    -- one unshifted prototype that's simply {0, 0}, and the overlay sits on the body.
+    sticker_box = {{0, 0}, {0, 0}},
     collision_mask = shared.drone_collision_mask,
     max_pursue_distance = 64,
     min_persue_time = (60 * 15),
@@ -148,7 +145,7 @@ local make_unit = function(k)
           }
         }
       },
-      animation = make_body_animation(shift)
+      animation = make_body_animation()
     },
     vision_distance = 40,
     has_belt_immunity = true,
@@ -156,7 +153,7 @@ local make_unit = function(k)
     movement_speed = 0.15,
     distance_per_frame = 0.15,
     absorptions_to_join_attack = {pollution = 1000},
-    rotation_speed = 1 / (60 * 1 + (math.random() / 20)),
+    rotation_speed = 1 / 30,
     --corpse = name.." Corpse",
     dying_explosion = "explosion",
     light =
@@ -165,8 +162,7 @@ local make_unit = function(k)
         minimum_darkness = darkness,
         intensity = 0.4,
         size = 10,
-        color = {r=1.0, g=1.0, b=1.0},
-        shift = shift
+        color = {r=1.0, g=1.0, b=1.0}
       },
       {
         type = "oriented",
@@ -180,7 +176,7 @@ local make_unit = function(k)
           width = 200,
           height = 200
         },
-        shift = {shift[1], shift[2] -3.5},
+        shift = {0, -3.5},
         size = 0.5,
         intensity = 0.6,
         color = {r=1.0, g=1.0, b=1.0}
@@ -193,16 +189,14 @@ local make_unit = function(k)
       max_sounds_per_type = 5,
       audible_distance_modifier = 0.7
     },
-    run_animation = make_body_animation(shift),
+    run_animation = make_body_animation(),
     affected_by_tiles = affected_by_tiles,
     emissions_per_second = {pollution = shared.drone_pollution_per_second}
   }
   data:extend{unit}
 end
 
-for k = 1, shared.variation_count do
-  make_unit(k)
-end
+make_unit()
 
 local slow_sticker =
 {

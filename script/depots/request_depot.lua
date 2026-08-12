@@ -496,7 +496,7 @@ end
 local min = math.min
 function request_depot:dispatch_drone(depot, count)
 
-  local drone = self.transport_drone.new(self, self.item)
+  local drone = self.transport_drone.new(self)
   -- new() returns nil when the drone entity couldn't be created at all. Bail out instead of
   -- dereferencing it; make_request only books the supply against this depot once dispatch
   -- actually succeeded.

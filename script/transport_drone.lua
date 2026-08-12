@@ -68,29 +68,12 @@ local get_drone_speed = function(force_index)
   return (base_drone_speed * (1 + transport_technologies.get_transport_speed_bonus(force_index))) --+ (math.random() / 32)
 end
 
-local variation_count = shared.variation_count
-local special_variation_count = shared.special_variation_count
-local random = math.random
-
-local is_drone_cache = {}
-local is_special_drone = function(name)
-  local bool = is_drone_cache[name]
-  if bool ~= nil then
-    return bool
-  end
-  bool = prototypes.entity["transport-drone-"..name.."-1"] ~= nil
-  is_drone_cache[name] = bool
-  return bool
-end
-
-local get_drone_name = function(item_name)
-  if item_name then
-    if is_special_drone(item_name) then
-      return "transport-drone-"..item_name.."-"..random(special_variation_count)
-    end
-  end
-  return "transport-drone-"..random(variation_count)
-end
+-- There is exactly one drone entity prototype now. It used to be picked at random out of 50
+-- otherwise-identical variations that differed only by a small render offset (plus a per-cargo
+-- "special" family, e.g. transport-drone-fuel-truck-N, which no longer exists at all) - see the
+-- comment in data/entities/transport_drone/transport_drone.lua for why that's gone. The name still
+-- ends in "-1" because pollution/kill statistics are recorded against it by name, below.
+local drone_entity_name = "transport-drone-1"
 
 
 local player_leave_drone = function(player)
@@ -113,7 +96,9 @@ local player_enter_drone = function(player, drone)
 end
 
 
-transport_drone.new = function(request_depot, drone_name)
+-- No longer takes the cargo name: it used to pick a matching "special" drone prototype for
+-- certain cargoes (and a random variation otherwise), but there's only one drone prototype now.
+transport_drone.new = function(request_depot)
 
   local corpse = request_depot.corpse
   if not (corpse and corpse.valid) then
@@ -125,9 +110,9 @@ transport_drone.new = function(request_depot, drone_name)
     error("No corpse found")
   end
 
-  local entity = request_depot.entity.surface.create_entity{name = get_drone_name(drone_name), position = corpse.position, force = request_depot.entity.force}
+  local entity = request_depot.entity.surface.create_entity{name = drone_entity_name, position = corpse.position, force = request_depot.entity.force}
   if not (entity and entity.valid) then
-    log("transport_drone.new: failed to create '"..get_drone_name(drone_name).."' at "..serpent.line(corpse.position))
+    log("transport_drone.new: failed to create '"..drone_entity_name.."' at "..serpent.line(corpse.position))
     return
   end
 
@@ -447,10 +432,11 @@ function transport_drone:update_sticker()
     local offset = self.entity.prototype.sticker_box.left_top
     --local force = self.entity.force
 
-    -- Drawn  only_in_alt_mode - with the body sprite back to a generic tank
-    -- shape, this "tray with the item in it" is the only visual indicator of what a drone is
-    -- carrying, so it needs to be visible in normal play, not just with alt mode held down. Alt
-    -- mode still shows it too, same as before - it's just no longer the only time it's drawn.
+    -- This pair (dark plate + item icon) is the big, highly legible read-at-a-glance indicator, so
+    -- it stays alt-mode-only - showing it permanently is far too loud once there are a lot of
+    -- drones on the road. The always-visible "what am I carrying" cue is meant to be a separate,
+    -- subtler overlay sprite rendered onto the tank body instead (a tray/box render); that art
+    -- doesn't exist yet, so right now a drone's cargo only reads in alt mode.
     self.background_rendering = rendering.draw_sprite
     {
       sprite = "utility/entity_info_dark_background",
@@ -458,10 +444,10 @@ function transport_drone:update_sticker()
       target_offset = offset,
       surface = surface,
       --forces = {force},
+      only_in_alt_mode = true,
       --target_offset = {0, -0.5},
       x_scale = 0.6,
       y_scale = 0.6,
-      only_in_alt_mode = true
     }
 
     self.item_rendering = rendering.draw_sprite
@@ -471,6 +457,7 @@ function transport_drone:update_sticker()
       target_offset = offset,
       surface = surface,
       --forces = {self.entity.force},
+      only_in_alt_mode = true,
       --target_offset = {0, -0.5},
       x_scale = 0.6,
       y_scale = 0.6,
@@ -483,7 +470,7 @@ function transport_drone:update_sticker()
     local surface = self.entity.surface
     local offset = self.entity.prototype.sticker_box.left_top
 
-    -- Same as the held_item case above - always visible, not only_in_alt_mode.
+    -- Same as the held_item case above - alt-mode-only.
     self.background_rendering = rendering.draw_sprite
     {
       sprite = "utility/entity_info_dark_background",
@@ -491,6 +478,7 @@ function transport_drone:update_sticker()
       target_offset = offset,
       surface = surface,
       --forces = {self.entity.force},
+      only_in_alt_mode = true,
       --target_offset = {0, -0.5},
       x_scale = 0.6,
       y_scale = 0.6,
@@ -503,6 +491,7 @@ function transport_drone:update_sticker()
       target_offset = offset,
       surface = surface,
       --forces = {self.entity.force},
+      only_in_alt_mode = true,
       --target_offset = {0, -0.5},
       x_scale = 0.6,
       y_scale = 0.6,
@@ -683,12 +672,19 @@ function transport_drone:go_to_depot(depot, radius, sprite_switch)
   --  })
   --end
 
+  -- This radius is what keeps drones from piling up on the exact same spot at a depot: they stop
+  -- anywhere within it rather than all converging on the corpse. It replaces the old trick of
+  -- drawing each drone at a small random offset (50 near-identical prototypes, see
+  -- data/entities/transport_drone/transport_drone.lua) - roughly the same apparent spread as
+  -- before (0.5 arrival + up to ~0.47 render offset), except the drones really are where they
+  -- look like they are. Drones can only stand on road tiles, so on a narrow road this naturally
+  -- becomes a queue along it rather than a blob around it.
   insert(commands,
   {
     type = defines.command.go_to_location,
     destination_entity = corpse,
     distraction = defines.distraction.none,
-    radius = radius or 0.5,
+    radius = radius or 1,
     pathfind_flags = drone_path_flags
   })
 
@@ -912,6 +908,22 @@ transport_drone.on_configuration_changed = function()
         drone.target_depot.fuel_on_the_way = (drone.target_depot.fuel_on_the_way or 0) + (drone.fuel_amount or 0)
       end
     else
+      -- The entity is gone - which is the normal case for any drone that was in flight when a mod
+      -- update removed its prototype (that happened wholesale when the 50 drone variations were
+      -- collapsed into one, so every save upgraded across that point hits this for most of its
+      -- drones).
+      --
+      -- Drop it from its depot's drone list as well, not just the global one. depot_common's
+      -- handler has already wiped every depot's to_be_taken/fuel_on_the_way, and this drone's
+      -- reservation was NOT re-registered above because its entity is invalid. If it were left in
+      -- depot.drones, check_drone_validity would eventually find it and call clear_reservations,
+      -- subtracting a reservation that no longer exists - leaving the supply depot with a negative
+      -- to_be_taken, which then inflates get_available_item_count and has it advertise stock it
+      -- hasn't got.
+      local depot = drone.request_depot
+      if depot and depot.drones then
+        depot.drones[drone.index] = nil
+      end
       script_data.drones[k] = nil
     end
   end

@@ -434,6 +434,36 @@ local run_migration = function()
   target:remove_fuel(target:get_fuel_amount())
   fuel:handle_fuel_request(target)
 
+  -- Also orphan an in-flight cargo drone holding a supply reservation. By this tick the request
+  -- depots have long since filled up and gone idle, so put one on the road by hand: restock the
+  -- provider, publish that to the network, empty the requester, and dispatch.
+  local requester = depot_common.get_depot(refs.quality_request)
+  local supply = depot_common.get_depot(refs.supply)
+  if not (requester and supply) then error("missing depot objects for the orphaned-drone check") end
+
+  refs.supply.insert{name = "iron-plate", count = 2000, quality = "uncommon"}
+  supply:update_contents()
+  refs.quality_request.get_output_inventory().clear()
+  requester:make_request()
+
+  -- Destroying the entity with no event raised leaves the drone object behind holding a
+  -- reservation it can never hand back - exactly the state every in-flight drone ends up in when a
+  -- mod update removes its prototype (which is what happened when the 50 drone variations were
+  -- collapsed into one). The handlers below can't re-register that reservation, so the drone must
+  -- not be left anywhere that later tries to *unreserve* it against an already-wiped counter.
+  -- check_reservation_accounting is what catches that going wrong.
+  local orphaned = 0
+  for _, drone in pairs (requester.drones) do
+    if drone.entity.valid and drone.requested_item then
+      drone.entity.destroy()
+      orphaned = orphaned + 1
+      break
+    end
+  end
+  if orphaned == 0 then
+    error("no in-flight cargo drone to orphan, so the prototype-removal path isn't being covered")
+  end
+
   local before = target.fuel_on_the_way or 0
   if before <= 0 then
     error("couldn't put a fuel delivery in flight to migrate (fuel_on_the_way = " .. tostring(before) .. ")")

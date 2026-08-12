@@ -224,7 +224,7 @@ end
 local min = math.min
 function buffer_depot:dispatch_drone(depot, count)
 
-  local drone = self.transport_drone.new(self, self.item)
+  local drone = self.transport_drone.new(self)
   -- See request_depot:dispatch_drone - new() can return nil if the entity couldn't be created.
   if not drone then return end
 
