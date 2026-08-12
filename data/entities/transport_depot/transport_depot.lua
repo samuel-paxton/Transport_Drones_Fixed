@@ -170,11 +170,16 @@ local supply_depot =
   dying_explosion = depot.dying_explosion,
   damaged_trigger_effect = depot.damaged_trigger_effect,
   corpse = depot.corpse,
-  flags = {"placeable-neutral", "player-creation", "not-deconstructable"},
+  -- No "not-deconstructable" here: that flag belonged to the old invisible chest half of the
+  -- two-entity design (the assembler on top was the deconstructable one). Now that the container
+  -- IS the depot, the flag would make it immune to deconstruction planners entirely.
+  flags = {"placeable-neutral", "player-creation"},
   max_health = 150,
   collision_box = collision_box,
   selection_box = selection_box,
-  fast_replaceable_group = "container",
+  -- Not "container" - a 3x3 depot has no business fast-replacing with 1x1 chests, and script
+  -- state has to go through the normal build/remove events anyway.
+  fast_replaceable_group = nil,
   scale_info_icons = false,
   inventory_size = 100,
   open_sound = { filename = "__base__/sound/metallic-chest-open.ogg", volume = 0.5 },
@@ -648,7 +653,7 @@ data:extend(buffer_depot_items)
 
 local reader = util.copy(data.raw["constant-combinator"]["constant-combinator"])
 reader.name = "road-network-reader"
-reader.localised_name = "Road network reader"
+reader.localised_name = {"road-network-reader"}
 reader.item_slot_count = 1
 reader.sprites = require(util.path("data/entities/transport_depot_circuits/road-network-reader-sprite"))
 reader.icon = util.path("data/entities/transport_depot_circuits/road-network-reader-icon.png")
@@ -666,6 +671,9 @@ local reader_item =
 {
   type = "item",
   name = "road-network-reader",
+  -- The locale only has a top-level "road-network-reader" key, not an [item-name] entry, so
+  -- without this the item shows as "Unknown key".
+  localised_name = {"road-network-reader"},
   icon = reader.icon,
   icon_size = reader.icon_size,
   stack_size = 20,

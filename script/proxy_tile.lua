@@ -28,15 +28,28 @@ local raw_road_tile_built = function(event)
 
 end
 
+-- The item the engine hands back when a given road tile is replaced/mined - not always "road",
+-- the fast road tile refunds "fast-road".
+local get_tile_item_name = function(tile_prototype)
+  local items = tile_prototype.items_to_place_this
+  local item = items and items[1]
+  return item and item.name
+end
+
 local non_road_tile_built = function(event)
 
   local tiles = event.tiles
   local new_tiles = {}
   local refund_count = 0
+  local road_items_gained = {}
   for k, tile in pairs (tiles) do
     if road_network.remove_node(event.surface_index, tile.position.x, tile.position.y) then
       new_tiles[k] = {name = tile.old_tile.name, position = tile.position}
       refund_count = refund_count + 1
+      local road_item = get_tile_item_name(tile.old_tile)
+      if road_item then
+        road_items_gained[road_item] = (road_items_gained[road_item] or 0) + 1
+      end
     end
   end
 
@@ -53,13 +66,17 @@ local non_road_tile_built = function(event)
         local player = game.get_player(event.player_index)
         if player then
           player.insert({name = event.item.name, count = refund_count})
-          player.remove_item({name = "road", count = refund_count})
+          for name, count in pairs (road_items_gained) do
+            player.remove_item({name = name, count = count})
+          end
         end
       end
       local robot = event.robot
       if robot then
         robot.get_inventory(defines.inventory.robot_cargo).insert({name = event.item.name, count = refund_count})
-        robot.get_inventory(defines.inventory.robot_cargo).remove({name = "road", count = refund_count})
+        for name, count in pairs (road_items_gained) do
+          robot.get_inventory(defines.inventory.robot_cargo).remove({name = name, count = count})
+        end
       end
     end
 
@@ -80,6 +97,7 @@ end
 local on_mined_tile = function(event)
   local tiles = event.tiles
   local new_tiles = {}
+  local road_items_gained = {}
   local refund_count = 0
   for k, tile in pairs (tiles) do
     if is_road_tile(tile.old_tile.name) then
@@ -87,6 +105,10 @@ local on_mined_tile = function(event)
         --can't remove this tile, supply or requester is there.
         new_tiles[k] = {name = tile.old_tile.name, position = tile.position}
         refund_count = refund_count + 1
+        local road_item = get_tile_item_name(tile.old_tile)
+        if road_item then
+          road_items_gained[road_item] = (road_items_gained[road_item] or 0) + 1
+        end
       end
     end
   end
@@ -100,12 +122,16 @@ local on_mined_tile = function(event)
     if event.player_index then
       local player = game.get_player(event.player_index)
       if player then
-        player.remove_item({name = "road", count = refund_count})
+        for name, count in pairs (road_items_gained) do
+          player.remove_item({name = name, count = count})
+        end
       end
     end
     local robot = event.robot
     if robot then
-      robot.get_inventory(defines.inventory.robot_cargo).remove({name = "road", count = refund_count})
+      for name, count in pairs (road_items_gained) do
+        robot.get_inventory(defines.inventory.robot_cargo).remove({name = name, count = count})
+      end
     end
   end
 

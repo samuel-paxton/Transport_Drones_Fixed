@@ -76,6 +76,8 @@ local make_recipe = function(item)
     return
   end
   if item.hidden or util.has_flag(item, "hidden") then return end
+  -- Blueprint-parameter placeholders ("parameter-0" etc) are real prototypes but not real goods.
+  if item.parameter then return end
   local max_stack = 65000
   if util.has_flag(item, "not-stackable") or item.type == "armor" then
     max_stack = 1
@@ -202,8 +204,11 @@ local make_fluid_request_recipe = function(fluid)
 end
 
 for k, fluid in pairs (data.raw.fluid) do
-  make_fluid_depot_recipe(fluid)
-  make_fluid_request_recipe(fluid)
+  -- Skip blueprint-parameter placeholder fluids, same as the item side above.
+  if not fluid.parameter then
+    make_fluid_depot_recipe(fluid)
+    make_fluid_request_recipe(fluid)
+  end
 end
 
 local fuel_recipe =

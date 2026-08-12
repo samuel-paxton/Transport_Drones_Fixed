@@ -126,7 +126,7 @@ end
 function fuel_depot:remove_drone(drone, remove_item)
   self.drones[drone.index] = nil
   if remove_item then
-    self:get_drone_inventory().remove{name = "transport-drone", count = 1}
+    self:get_drone_inventory().remove{name = "transport-drone", count = 1, quality = util.normal_quality}
   end
   self:update_sticker()
 end
@@ -184,7 +184,7 @@ end
 
 
 function fuel_depot:get_drone_item_count()
-  return self:get_drone_inventory().get_item_count("transport-drone")
+  return self:get_drone_inventory().get_item_count{name = "transport-drone", quality = util.normal_quality}
 end
 
 function fuel_depot:get_active_drone_count()

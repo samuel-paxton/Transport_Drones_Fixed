@@ -4,20 +4,31 @@ local script_data =
   transport_capacity = {},
 }
 
+-- For a finite technology in the chain ("...-1" to "...-4"), .level is just its own level and
+-- .researched flips to true when it completes. For the infinite one, .researched never becomes
+-- true and .level is the *next* researchable level - so right after completing (or reversing)
+-- a level, the highest finished level is .level - 1.
+local get_effective_level = function(technology)
+  if technology.researched then
+    return technology.level
+  end
+  return technology.level - 1
+end
+
 local technology_effects =
 {
   [shared.transport_speed_technology] = function(technology)
     local force_index = technology.force.index
-    script_data.transport_speed[force_index] = technology.level * 0.2
+    script_data.transport_speed[force_index] = get_effective_level(technology) * 0.2
   end,
   [shared.transport_capacity_technology] = function(technology)
     local force_index = technology.force.index
-    script_data.transport_capacity[force_index] = technology.level
+    script_data.transport_capacity[force_index] = get_effective_level(technology)
   end,
 }
 
 
-local on_research_finished = function(event)
+local on_research_changed = function(event)
   local technology = event.research
   local name = technology.name
 
@@ -50,7 +61,8 @@ end
 
 lib.events =
 {
-  [defines.events.on_research_finished] = on_research_finished
+  [defines.events.on_research_finished] = on_research_changed,
+  [defines.events.on_research_reversed] = on_research_changed
 }
 
 return lib

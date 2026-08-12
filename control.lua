@@ -11,5 +11,5 @@ handler.add_lib(require("script/proxy_tile"))
 handler.add_lib(require("script/transport_technologies"))
 handler.add_lib(require("script/gui"))
 
---require("script/remote_interface")
+require("script/remote_interface")
 --handler.add_lib(require("script/self_test")) -- dev-only, see script/self_test.lua

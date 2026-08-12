@@ -300,7 +300,11 @@ local clear_network = function(id)
   for category, depots in pairs (network.depots) do
     for id, depot in pairs (depots) do
       depot:remove_from_network()
-      depot:add_to_network()
+      -- Same guard as set_node_ids: the depot's entity can already be gone (e.g. its surface is
+      -- being deleted), and add_to_network dereferences entity.surface.
+      if depot.entity.valid then
+        depot:add_to_network()
+      end
     end
   end
 
@@ -610,6 +614,9 @@ road_network.check_clear_lonely_node = function(surface, x, y)
   end
 
   local surface = game.surfaces[surface]
+  -- The surface can already be gone: depot teardown reaches here via on_object_destroyed, which
+  -- also fires while a surface (and everything on it) is being deleted.
+  if not surface then return end
   local position = {x, y}
 
   local hidden = surface.get_hidden_tile(position)
@@ -624,6 +631,40 @@ road_network.check_clear_lonely_node = function(surface, x, y)
   end
 
 end
+
+-- A surface being deleted (or cleared) takes its road tiles with it without any tile events, so
+-- the node map for it has to be dropped by hand, along with any networks made of those nodes -
+-- networks never span surfaces, so every network referenced by a node here is entirely gone.
+local clear_surface = function(surface_index)
+  local surface_map = script_data.node_map[surface_index]
+  if not surface_map then return end
+  script_data.node_map[surface_index] = nil
+
+  local cleared = {}
+  for x, x_map in pairs (surface_map) do
+    for y, node in pairs (x_map) do
+      local id = node.id
+      if id and not cleared[id] then
+        cleared[id] = true
+        clear_network(id)
+      end
+    end
+  end
+end
+
+local on_surface_deleted = function(event)
+  clear_surface(event.surface_index)
+end
+
+local on_surface_cleared = function(event)
+  clear_surface(event.surface_index)
+end
+
+road_network.events =
+{
+  [defines.events.on_surface_deleted] = on_surface_deleted,
+  [defines.events.on_surface_cleared] = on_surface_cleared,
+}
 
 road_network.on_init = function()
   storage.road_network = storage.road_network or script_data

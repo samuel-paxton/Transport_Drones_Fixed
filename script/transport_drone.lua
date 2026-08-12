@@ -174,6 +174,7 @@ function transport_drone:deliver_fuel(depot, amount)
 
   if not depot.entity.valid then
     self:return_to_requester()
+    return
   end
 
   self.target_depot = depot
@@ -832,24 +833,54 @@ local on_tick = function(event)
   local players = game.players
   for player_index, drone in pairs (script_data.riding_players) do
     local player = players[player_index]
-    if player and player.valid then
-      if drone.entity and drone.entity.valid then
+    if not (player and player.valid) then
+      -- Player no longer exists (removed from the game); drop the stale entry.
+      script_data.riding_players[player_index] = nil
+      drone.riding_player = nil
+    elseif not (drone.entity and drone.entity.valid) or player.surface ~= drone.entity.surface then
+      -- Drone died mid-ride, or the player got teleported to another surface - dismount rather
+      -- than dragging them toward coordinates on the wrong surface.
+      player_leave_drone(player)
+    else
+      local player_position = player.position
+      local position = drone.entity.position
+      local shift = drone.entity.prototype.sticker_box.left_top
+      local target_position = {x = position.x + shift.x, y = position.y + shift.y}
+      local dx, dy = (target_position.x - player_position.x) * smoothing, (target_position.y - player_position.y) * smoothing
 
-        local player_position = player.position
-        local position = drone.entity.position
-        local shift = drone.entity.prototype.sticker_box.left_top
-        local target_position = {x = position.x + shift.x, y = position.y + shift.y}
-        local dx, dy = (target_position.x - player_position.x) * smoothing, (target_position.y - player_position.y) * smoothing
-
-        local final_position = {player_position.x + dx, player_position.y + dy}
-        player.teleport(final_position)
-        if player.character then
-          --player.character.walking_state = {walking = false, direction = to_direction(drone.entity.orientation)}
-          player.character.direction = to_direction(get_orientation(player_position, final_position))
-        end
+      local final_position = {player_position.x + dx, player_position.y + dy}
+      player.teleport(final_position)
+      if player.character then
+        --player.character.walking_state = {walking = false, direction = to_direction(drone.entity.orientation)}
+        player.character.direction = to_direction(get_orientation(player_position, final_position))
       end
     end
   end
+end
+
+local on_pre_player_left_game = function(event)
+  local player = game.get_player(event.player_index)
+  if not player then return end
+  player_leave_drone(player)
+end
+
+local on_player_removed = function(event)
+  local drone = script_data.riding_players[event.player_index]
+  if not drone then return end
+  script_data.riding_players[event.player_index] = nil
+  drone.riding_player = nil
+end
+
+-- Another mod cloning entities (e.g. Space Exploration's spaceship launches) can clone a drone
+-- unit. The clone has no drone data and no command, so it would just sit on the road forever -
+-- remove it. The source drone (if it gets destroyed by the cloning mod) is handled by the normal
+-- on_entity_removed/on_object_destroyed paths.
+local on_entity_cloned = function(event)
+  local destination = event.destination
+  if not (destination and destination.valid) then return end
+  if destination.name ~= drone_entity_name then return end
+  if get_drone(tostring(destination.unit_number)) then return end
+  destination.destroy()
 end
 
 local set_map_settings = function()
@@ -872,6 +903,10 @@ transport_drone.events =
   [defines.events.script_raised_destroy] = on_entity_removed,
 
   [defines.events.on_ai_command_completed] = on_ai_command_completed,
+  [defines.events.on_entity_cloned] = on_entity_cloned,
+
+  [defines.events.on_pre_player_left_game] = on_pre_player_left_game,
+  [defines.events.on_player_removed] = on_player_removed,
 
   ["follow-drone"] = follow_drone_hotkey,
   [defines.events.on_tick] = on_tick,

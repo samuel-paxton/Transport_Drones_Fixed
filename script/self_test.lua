@@ -558,6 +558,135 @@ local check_parameter_recipe_recovery = function()
   log("SELF_TEST: depots survived a parameter recipe and had their real recipe restored")
 end
 
+-- The remote interface must exist and answer; it's the public API other mods integrate against.
+local check_remote_interface = function()
+  if not remote.interfaces["transport_drones"] then
+    error("remote interface 'transport_drones' is not registered")
+  end
+  local count = remote.call("transport_drones", "get_drone_count")
+  if type(count) ~= "number" then
+    error("get_drone_count returned " .. type(count) .. " instead of a number")
+  end
+  log("SELF_TEST: remote interface ok (get_drone_count=" .. count .. ")")
+end
+
+-- Entity cloning (Space Exploration's spaceships, editor cloning) copies entities without any of
+-- this mod's bookkeeping. A cloned depot must get registered like a fresh build (laying its own
+-- road node if the destination has none), and a cloned drone - which can never be valid, it has
+-- no drone data or command - must be removed instead of idling on the road forever.
+local check_entity_clone = function()
+  local surface = refs.surface
+
+  -- Guarantee land at the clone destination - it's outside the area the rest of the test built on.
+  local pad = {}
+  for x = 23, 29 do
+    for y = -1, 6 do
+      table.insert(pad, {name = "grass-1", position = {x, y}})
+    end
+  end
+  surface.set_tiles(pad)
+
+  local networks_before = table_size(road_network.get_networks())
+
+  local source = refs.request
+  local clone = source.clone{position = {26, 3}, surface = surface, force = source.force}
+  if not (clone and clone.valid) then error("cloning a request depot failed outright") end
+
+  local depot = depot_common.get_depot(clone)
+  if not depot then error("cloned request depot wasn't registered as a depot") end
+  if not (depot.corpse and depot.corpse.valid) then error("cloned request depot has no corpse") end
+
+  clone.destroy{raise_destroy = true}
+  if table_size(road_network.get_networks()) ~= networks_before then
+    error("cloned depot's scratch road node didn't clean up its network on removal")
+  end
+
+  -- A drone to clone may or may not be on the road right now; if none is, dispatch one by hand
+  -- the same way run_migration does.
+  local drone_entity = surface.find_entities_filtered{name = "transport-drone-1", limit = 1}[1]
+  if not drone_entity then
+    local requester = depot_common.get_depot(refs.request)
+    local supply = depot_common.get_depot(refs.supply)
+    refs.supply.insert{name = "iron-plate", count = 1000, quality = "normal"}
+    supply:update_contents()
+    refs.request.get_output_inventory().clear()
+    requester:make_request()
+    drone_entity = surface.find_entities_filtered{name = "transport-drone-1", limit = 1}[1]
+  end
+  if not drone_entity then error("couldn't get a drone on the road to clone") end
+
+  -- Clone onto a road tile - drones collide with every non-road tile, so anywhere else might
+  -- refuse the placement and the handler under test would never run.
+  local drone_clone = drone_entity.clone{position = {16.5, 5.5}, surface = surface}
+  if drone_clone and drone_clone.valid then
+    error("cloned drone zombie survived - it has no drone data and would idle forever")
+  end
+
+  log("SELF_TEST: entity clone handling ok (depot registered, drone zombie removed)")
+end
+
+-- Deleting a surface takes its roads, depots and networks with it, with no tile/mined events -
+-- only on_object_destroyed (per depot) and on_surface_deleted fire. This used to crash in
+-- check_clear_lonely_node (game.surfaces[index] is nil mid-teardown) and leak the whole node map.
+local deletion_info
+local check_surface_deletion_setup = function()
+  local surface = game.create_surface("td-test-deletion")
+  surface.request_to_generate_chunks({0, 0}, 2)
+  surface.force_generate_chunk_requests()
+
+  -- The generated terrain can be anything including water; lay a land pad first.
+  local pad = {}
+  for x = -5, 5 do
+    for y = -2, 6 do
+      table.insert(pad, {name = "grass-1", position = {x, y}})
+    end
+  end
+  surface.set_tiles(pad)
+
+  local roads = {}
+  for x = -5, 5 do
+    table.insert(roads, {name = "transport-drone-road", position = {x, 0}})
+  end
+  surface.set_tiles(roads, true, "abort_on_collision", false, true)
+
+  if not road_network.get_node(surface.index, 0, 0) then
+    error("road laid on the doomed surface didn't register a node")
+  end
+
+  local depot = build(surface, refs.force, "supply-depot", {0, 3}, defines.direction.north)
+  local depot_object = depot_common.get_depot(depot)
+  if not depot_object then error("depot on the doomed surface wasn't registered") end
+
+  deletion_info =
+  {
+    surface_index = surface.index,
+    depot_index = depot_object.index,
+    networks_before = table_size(road_network.get_networks())
+  }
+
+  game.delete_surface(surface)
+  log("SELF_TEST: doomed surface set up and queued for deletion")
+end
+
+local check_surface_deletion = function()
+  if not deletion_info then error("surface deletion setup never ran") end
+  if game.surfaces["td-test-deletion"] then
+    error("the doomed surface still exists - deletion never happened, check proves nothing")
+  end
+  if road_network.get_node(deletion_info.surface_index, 0, 0) then
+    error("node map still has entries for the deleted surface")
+  end
+  if depot_common.get_depot_by_index(deletion_info.depot_index) then
+    error("depot on the deleted surface is still registered")
+  end
+  -- The deleted surface's own network must be gone too (networks never span surfaces).
+  if table_size(road_network.get_networks()) >= deletion_info.networks_before then
+    error(string.format("network count didn't drop after surface deletion (%d before, %d after)",
+      deletion_info.networks_before, table_size(road_network.get_networks())))
+  end
+  log("SELF_TEST: surface deletion cleaned up nodes, depot registration and networks")
+end
+
 -- Empty out two request depots so the final check proves the network is still actively
 -- delivering after the migration, rather than just still holding what it had before it.
 local drain_depots = function()
@@ -591,6 +720,11 @@ local phases =
   -- certainly tick at least once while holding the product-less recipe.
   [3000] = {name = "parameter_recipe", run = check_parameter_recipe},
   [3300] = {name = "parameter_recovery", run = check_parameter_recipe_recovery},
+  [3600] = {name = "remote_interface", run = check_remote_interface},
+  [3900] = {name = "entity_clone", run = check_entity_clone},
+  [4200] = {name = "surface_deletion_setup", run = check_surface_deletion_setup},
+  -- Surface deletion is deferred by the engine (happens between ticks), so verify well after.
+  [4800] = {name = "surface_deletion", run = check_surface_deletion},
   [5900] = {name = "reservation_accounting", run = check_reservation_accounting},
 }
 

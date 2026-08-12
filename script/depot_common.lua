@@ -103,7 +103,7 @@ local attempt_to_place_node = function(entity, depot_lib)
   end
 
   local tiles = { {name = "transport-drone-road", position = node_position} }
-  surface.set_tiles(tiles, false, "abort_on_collision", false, true)
+  surface.set_tiles(tiles, true, "abort_on_collision", false, true)
 
   if road_network.get_node(surface.index, node_position[1], node_position[2]) then
     return true
@@ -210,6 +210,18 @@ local on_created_entity = function(event)
 
 end
 
+-- Entity cloning (e.g. Space Exploration moving a spaceship) copies the entity but none of this
+-- mod's bookkeeping - the clone would be a permanently inert depot. Register it like a fresh
+-- build; attempt_to_place_node lays a road node under its corpse position if the destination
+-- doesn't have one.
+local on_entity_cloned = function(event)
+  local destination = event.destination
+  if not (destination and destination.valid) then return end
+  if not depot_libs[destination.name] then return end
+  if get_depot(destination) then return end
+  on_created_entity({entity = destination})
+end
+
 local remove_depot = function(depot, event)
   depot:remove_from_network()
   local surface = depot.surface_index
@@ -270,6 +282,13 @@ local update_depots = function(tick)
     if not depot_index then return end
     local depot = depots[depot_index]
     if not (depot and depot.entity.valid) then
+      if depot then
+        -- Fallback for a depot whose entity vanished without any removal event reaching us: a
+        -- full teardown, not just dropping the registry entry - otherwise it stays behind in its
+        -- road node's and network's depot lists, and e.g. get_depots_by_distance would later hand
+        -- it to a fuel dispatch that dereferences the invalid entity.
+        remove_depot(depot, {})
+      end
       depots[depot_index] = nil
       local last = #update_list
       if k == last then
@@ -336,6 +355,16 @@ local picker_dolly_blacklist = function()
 
 end
 
+local get_entity_tags = function(entity)
+  local depot = get_depot(entity)
+  if not depot then return end
+
+  local saver = depot.save_to_blueprint_tags
+  if not saver then return end
+
+  return saver(depot)
+end
+
 local get_tags = function(blueprint_entity, surface)
   local name = blueprint_entity.name
   local lib = depot_libs[name]
@@ -344,13 +373,7 @@ local get_tags = function(blueprint_entity, surface)
   local entity = surface.find_entity(name, blueprint_entity.position)
   if not entity then return end
 
-  local depot = get_depot(entity)
-  if not depot then return end
-
-  local saver = depot.save_to_blueprint_tags
-  if not saver then return end
-
-  return saver(depot)
+  return get_entity_tags(entity)
 end
 
 
@@ -369,8 +392,20 @@ local on_player_setup_blueprint = function(event)
 
   local surface = player.surface
 
+  -- event.mapping (blueprint index -> source entity) is the authoritative link; the blueprint
+  -- entities' own positions aren't guaranteed to be world coordinates, so position-based lookup
+  -- only remains as a fallback for callers that can't provide a mapping (e.g. the self test
+  -- invoking this handler directly with a synthetic event).
+  local mapping = event.mapping and event.mapping.valid and event.mapping.get()
+
   for index, blueprint_entity in pairs(entities) do
-    local tags = get_tags(blueprint_entity, surface)
+    local tags
+    local source = mapping and mapping[index]
+    if source and source.valid and depot_libs[source.name] then
+      tags = get_entity_tags(source)
+    else
+      tags = get_tags(blueprint_entity, surface)
+    end
     if tags then
       item.set_blueprint_entity_tag(index, "transport_depot_tags", tags)
     end
@@ -390,6 +425,7 @@ lib.events =
   [defines.events.on_robot_built_entity] = on_created_entity,
   [defines.events.script_raised_built] = on_created_entity,
   [defines.events.script_raised_revive] = on_created_entity,
+  [defines.events.on_entity_cloned] = on_entity_cloned,
 
   [defines.events.on_entity_died] = on_entity_removed,
   [defines.events.on_robot_mined_entity] = on_entity_removed,

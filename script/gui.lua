@@ -941,7 +941,7 @@ local on_lua_shortcut = function(event)
   toggle_gui(event)
 end
 
-commands.add_command("toggle-transport-depot-gui", "idk",
+commands.add_command("toggle-transport-depot-gui", {"controls.toggle-road-network-gui"},
 function(command)
   local player = game.player
   if not player then return end
