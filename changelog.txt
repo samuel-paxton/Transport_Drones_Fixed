@@ -1,6 +1,6 @@
 ---------------------------------------------------------------------------------------------------
 Version: 2.1.0
-Date: 2026-08-09
+Date: 2026-08-12
   Changes:
     - Ported to Factorio 2.1 (prototypes, collision masks, fluid boxes, GUI/circuit APIs, defines.direction, etc).
     - Added Quality support: request/buffer depots can request items at a specific quality (pick it the same way you pick the item, on the depot's recipe selector), and the road network only matches supply/demand of the same quality. Transport drones themselves are always normal quality, regardless of what they're carrying.

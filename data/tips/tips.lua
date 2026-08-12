@@ -26,7 +26,7 @@ local tips =
     },
     is_title = true,
     indent = 0,
-    image = path("transport_drones.png"),
+    image = path("transport_drones.jpg"),
     category = "transport-drones",
   },
   {
@@ -37,7 +37,7 @@ local tips =
     order = "b",
     dependencies = {"transport-drones"},
     indent = 1,
-    image = path("road_network.png"),
+    image = path("road_network.jpg"),
     category = "transport-drones",
     tag = "[item=road]"
   },
@@ -49,7 +49,7 @@ local tips =
     order = "c",
     dependencies = {"transport-drones"},
     indent = 1,
-    image = path("transport_drones.png"),
+    image = path("transport_drones.jpg"),
     category = "transport-drones",
     tag = "[item=transport-drone]"
   },
@@ -63,7 +63,7 @@ local tips =
     dependencies = {"transport-drones"},
     category = "transport-drones",
     indent = 1,
-    image = path("transport_depots.png"),
+    image = path("transport_depots.jpg"),
     tag = "[technology=transport-system]"
   },
   {
@@ -75,7 +75,7 @@ local tips =
     dependencies = {"transport-drones"},
     category = "transport-drones",
     indent = 2,
-    image = path("fuel_depot.png"),
+    image = path("fuel_depot.jpg"),
     tag = "[item=fuel-depot]"
   },
   {
@@ -87,7 +87,7 @@ local tips =
     dependencies = {"transport-drones"},
     category = "transport-drones",
     indent = 2,
-    image = path("request_depot_1.png"),
+    image = path("request_depot_1.jpg"),
     tag = "[item=request-depot]"
   },
   {
@@ -99,7 +99,7 @@ local tips =
     dependencies = {"transport-drones"},
     category = "transport-drones",
     indent = 2,
-    image = path("supply_depot.png"),
+    image = path("supply_depot.jpg"),
     tag = "[item=supply-depot]"
   },
   {
@@ -111,7 +111,7 @@ local tips =
     dependencies = {"transport-drones"},
     category = "transport-drones",
     indent = 2,
-    image = path("buffer_depot.png"),
+    image = path("buffer_depot.jpg"),
     tag = "[item=buffer-depot]"
   },
   {
@@ -123,7 +123,7 @@ local tips =
     dependencies = {"transport-drones"},
     category = "transport-drones",
     indent = 1,
-    image = path("circuit_connectors.png"),
+    image = path("circuit_connectors.jpg"),
     tag = "[technology=transport-depot-circuits]"
   },
   {
@@ -135,7 +135,7 @@ local tips =
     dependencies = {"transport-drones"},
     category = "transport-drones",
     indent = 2,
-    image = path("network_reader.png"),
+    image = path("network_reader.jpg"),
     tag = "[item=road-network-reader]"
   },
 
