@@ -1,8 +1,4 @@
-local util = require("data/tf_util/tf_util")
-
-local path = function(string)
-  return util.path("data/tips/"..string)
-end
+local simulations = require("data/tips/simulations")
 
 local tips =
 {
@@ -26,7 +22,7 @@ local tips =
     },
     is_title = true,
     indent = 0,
-    image = path("transport_drones.jpg"),
+    simulation = simulations.overview,
     category = "transport-drones",
   },
   {
@@ -37,7 +33,7 @@ local tips =
     order = "b",
     dependencies = {"transport-drones"},
     indent = 1,
-    image = path("road_network.jpg"),
+    simulation = simulations.road_network,
     category = "transport-drones",
     tag = "[item=road]"
   },
@@ -49,7 +45,7 @@ local tips =
     order = "c",
     dependencies = {"transport-drones"},
     indent = 1,
-    image = path("transport_drones.jpg"),
+    simulation = simulations.drones,
     category = "transport-drones",
     tag = "[item=transport-drone]"
   },
@@ -63,7 +59,7 @@ local tips =
     dependencies = {"transport-drones"},
     category = "transport-drones",
     indent = 1,
-    image = path("transport_depots.jpg"),
+    simulation = simulations.depots,
     tag = "[technology=transport-system]"
   },
   {
@@ -75,7 +71,7 @@ local tips =
     dependencies = {"transport-drones"},
     category = "transport-drones",
     indent = 2,
-    image = path("fuel_depot.jpg"),
+    simulation = simulations.fuel_depots,
     tag = "[item=fuel-depot]"
   },
   {
@@ -87,7 +83,7 @@ local tips =
     dependencies = {"transport-drones"},
     category = "transport-drones",
     indent = 2,
-    image = path("request_depot_1.jpg"),
+    simulation = simulations.request_depots,
     tag = "[item=request-depot]"
   },
   {
@@ -99,7 +95,7 @@ local tips =
     dependencies = {"transport-drones"},
     category = "transport-drones",
     indent = 2,
-    image = path("supply_depot.jpg"),
+    simulation = simulations.supply_depots,
     tag = "[item=supply-depot]"
   },
   {
@@ -111,7 +107,7 @@ local tips =
     dependencies = {"transport-drones"},
     category = "transport-drones",
     indent = 2,
-    image = path("buffer_depot.jpg"),
+    simulation = simulations.buffer_depots,
     tag = "[item=buffer-depot]"
   },
   {
@@ -123,7 +119,7 @@ local tips =
     dependencies = {"transport-drones"},
     category = "transport-drones",
     indent = 1,
-    image = path("network_reader.jpg"),
+    simulation = simulations.network_reader,
     tag = "[item=road-network-reader]"
   },
 

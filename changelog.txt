@@ -7,6 +7,7 @@ Date: 2026-08-12
     - Removed the Transport depot writer and Transport depot reader entities - depots can be wired to the circuit network directly now, no separate adapter needed. Turn on 'Read contents' on the depot itself to see what it's holding. The Road network reader is unaffected and still works the same way.
     - Request and buffer depots can be enabled/disabled with a circuit or logistic condition, wired directly to the depot; set the condition to the requested item with '=' to override its request size instead of just gating it. Supply, mining, and fluid depots always offer their stock to the network now - they can no longer be circuit-disabled, only read.
     - Supply depot is a single entity now instead of two overlapping ones - fixes the occasional case where clicks or blueprints could catch the wrong one of the pair.
+    - The tips and tricks entries now play live simulations instead of showing screenshots - each one builds a small working road network and lets it run, the same way the base game's tips do.
 ---------------------------------------------------------------------------------------------------
 Version: 1.0.16
 Date: 2024-01-07
