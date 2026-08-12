@@ -335,10 +335,14 @@ function buffer_depot:suicide_all_drones()
 end
 
 function buffer_depot:set_request_mode()
+  self.mode = nil
   local recipe = self.entity.get_recipe()
   if not recipe then return end
 
-  local product_type = recipe.products[1].type
+  local product = util.get_recipe_product(recipe)
+  if not product then return end
+
+  local product_type = product.type
   if product_type == "item" then
     --self:say("Set to item")
     self.mode = request_mode.item
@@ -371,7 +375,9 @@ end
 function buffer_depot:get_requested_item()
   local recipe, quality = self.entity.get_recipe()
   if not recipe then return end
-  return recipe.products[1].name, (quality and quality.name) or util.normal_quality
+  local product = util.get_recipe_product(recipe)
+  if not product then return end
+  return product.name, (quality and quality.name) or util.normal_quality
 end
 
 local stack_cache = {}
@@ -682,6 +688,11 @@ end
 
 function buffer_depot:on_config_changed()
   self:set_request_mode()
+  -- See request_depot:on_config_changed - item without a mode is unsizeable, and the GUI can read
+  -- get_request_size() before check_request_change gets a chance to reconcile the two.
+  if not self.mode then
+    self.item = nil
+  end
   self.quality = self.quality or util.normal_quality
   -- Reset unconditionally (not "or {}") - contents/to_be_taken used to be flat [name] = count
   -- tables before quality support; they're now [quality][name] = count. Discarding old data

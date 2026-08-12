@@ -295,7 +295,10 @@ function request_depot:set_request_mode()
   local recipe = self.entity.get_recipe()
   if not recipe then return end
 
-  local product_type = recipe.products[1].type
+  local product = util.get_recipe_product(recipe)
+  if not product then return end
+
+  local product_type = product.type
   if product_type == "item" then
     --self:say("Set to item")
     self.mode = request_mode.item
@@ -335,7 +338,9 @@ end
 function request_depot:get_requested_item()
   local recipe, quality = self.entity.get_recipe()
   if not recipe then return end
-  return recipe.products[1].name, (quality and quality.name) or util.normal_quality
+  local product = util.get_recipe_product(recipe)
+  if not product then return end
+  return product.name, (quality and quality.name) or util.normal_quality
 end
 
 local stack_cache = {}
@@ -611,6 +616,13 @@ end
 
 function request_depot:on_config_changed()
   self:set_request_mode()
+  -- item and mode have to stay consistent: with no mode, get_stack_size() (and so
+  -- get_request_size()) has nothing to size with. check_request_change reconciles them, but it
+  -- only runs when this depot's update bucket next comes round - up to a full update interval
+  -- later - and the GUI's own refresh reads get_request_size() every 60 ticks in the meantime.
+  if not self.mode then
+    self.item = nil
+  end
   self.quality = self.quality or util.normal_quality
   self.fuel_on_the_way = self.fuel_on_the_way or 0
 end

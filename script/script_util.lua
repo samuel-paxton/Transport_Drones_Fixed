@@ -89,6 +89,17 @@ end
 -- regardless of what it's tracking for its actual cargo.
 util.normal_quality = "normal"
 
+-- A recipe set on a depot does NOT necessarily have any products. Blueprint parameters
+-- ("parameter-0" through "parameter-9") are real recipe prototypes carrying no results at all,
+-- and the game lets the player set one on any crafting machine while parametrising a blueprint -
+-- so a depot can genuinely be sitting there with a product-less recipe. Indexing products[1]
+-- blindly crashes the whole save in that case. Returns nil for "this recipe doesn't name a
+-- thing to move", which every caller treats as "no request set".
+util.get_recipe_product = function(recipe)
+  local products = recipe and recipe.products
+  return products and products[1]
+end
+
 -- item-request-proxy's (and blueprint entities') "modules" field used to be a plain
 -- {[item_name] = count} dictionary. It's now an array of BlueprintInsertPlan, which needs an
 -- explicit destination inventory + stack index per item rather than just a name and a count.

@@ -267,6 +267,18 @@ local setup = function()
   doomed.set_recipe("request-stone")
   give_drones(doomed, 5)
 
+  -- Dedicated depots for the blueprint-parameter recipe check below - one of each kind that reads
+  -- a recipe. They ask for stone, which nothing in the network stocks, for two reasons: they never
+  -- compete for the goods the delivery assertions measure, and set_recipe() voids a machine's
+  -- output inventory, so swapping their recipe can't destroy anything being counted.
+  local parameter_request = build(surface, force, "request-depot", {16, 4}, defines.direction.north)
+  parameter_request.set_recipe("request-stone")
+  give_drones(parameter_request, 5)
+
+  local parameter_buffer = build(surface, force, "buffer-depot", {16, -3}, defines.direction.south)
+  parameter_buffer.set_recipe("request-stone")
+  give_drones(parameter_buffer, 5)
+
   -- Blueprint tag round trip. The read half needs no player, so it always runs.
   check_blueprint_tag_round_trip(surface, force, fuel_depot, {0, 40})
 
@@ -300,6 +312,8 @@ local setup = function()
     disabled_request = disabled_request,
     unarmed_request = unarmed_request,
     doomed = doomed,
+    parameter_request = parameter_request,
+    parameter_buffer = parameter_buffer,
   }
 end
 
@@ -409,6 +423,12 @@ local run_migration = function()
   local fuel = depot_common.get_depot(refs.fuel_depot)
   if not (target and fuel) then error("missing depot objects for the in-flight fuel check") end
 
+  -- Top the fuel depot back up first: it only holds a couple of thousand units at a time (its
+  -- fluid boxes are small) and the other depots draw it down, so without this whether it can
+  -- dispatch at all depends on how many depots the test happens to be running.
+  refs.fuel_depot.insert_fluid{name = fuel_fluid, amount = 100000}
+  give_drones(refs.fuel_depot, 10)
+
   -- Empty the target and dispatch by hand rather than waiting for the depot update cycle, so the
   -- drone is reliably still en route (and not already delivered) when the handlers run below.
   target:remove_fuel(target:get_fuel_amount())
@@ -455,6 +475,59 @@ local check_reservation_accounting = function()
   end
 end
 
+-- Blueprint parameter recipes ("parameter-0" .. "parameter-9") are real recipe prototypes with no
+-- results at all, and the game lets a player set one on any crafting machine while parametrising a
+-- blueprint. A depot sitting on one used to crash the whole save on the next update, because
+-- get_requested_item/set_request_mode indexed recipe.products[1] unconditionally.
+--
+-- Set one on both a request and a buffer depot, let them update, and check they just go quiet
+-- (no item requested) instead of throwing - then put a real recipe back and check they recover.
+local parameter_depots = {}
+local check_parameter_recipe = function()
+  parameter_depots = {}
+
+  for _, key in pairs({"parameter_request", "parameter_buffer"}) do
+    local entity = refs[key]
+    if not (entity and entity.valid) then error("missing entity for the parameter recipe check: " .. key) end
+
+    local previous = entity.get_recipe()
+    entity.set_recipe("parameter-0")
+    if not entity.get_recipe() then
+      error(key .. ": the game refused to accept a parameter recipe, so this check proves nothing")
+    end
+
+    parameter_depots[key] = previous and previous.name
+  end
+
+  log("SELF_TEST: set parameter-0 on a request and a buffer depot")
+end
+
+-- Runs a couple of update intervals after the recipes were swapped, so every affected depot has
+-- certainly ticked at least once while holding the product-less recipe.
+local check_parameter_recipe_recovery = function()
+  for key, previous_name in pairs (parameter_depots) do
+    local entity = refs[key]
+    local depot = depot_common.get_depot(entity)
+    if not depot then error(key .. ": depot vanished while holding a parameter recipe") end
+    if depot.item then
+      error(string.format("%s still reports a requested item (%s) while set to a parameter recipe",
+        key, tostring(depot.item)))
+    end
+
+    -- get_request_size() is what the GUI calls every 60 ticks; it must not be reachable in a
+    -- state where it can't size the request.
+    if depot.mode then
+      error(key .. ": a product-less recipe left a request mode set")
+    end
+
+    if previous_name then
+      entity.set_recipe(previous_name)
+    end
+  end
+
+  log("SELF_TEST: depots survived a parameter recipe and had their real recipe restored")
+end
+
 -- Empty out two request depots so the final check proves the network is still actively
 -- delivering after the migration, rather than just still holding what it had before it.
 local drain_depots = function()
@@ -484,6 +557,10 @@ local phases =
   [1800] = {name = "road_split", run = check_road_network_split},
   [2100] = {name = "migration", run = run_migration},
   [2400] = {name = "drain", run = drain_depots},
+  -- The two parameter phases are deliberately several update intervals apart, so the depots
+  -- certainly tick at least once while holding the product-less recipe.
+  [3000] = {name = "parameter_recipe", run = check_parameter_recipe},
+  [3300] = {name = "parameter_recovery", run = check_parameter_recipe_recovery},
   [5900] = {name = "reservation_accounting", run = check_reservation_accounting},
 }
 

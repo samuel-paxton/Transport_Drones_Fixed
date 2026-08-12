@@ -60,8 +60,12 @@ local states =
   delivering_fuel = 4
 }
 
+-- Base speed before any transport-drone-speed research. Lowered from the old 0.066 (~4 tiles/s) -
+-- with the steering tightened up (see the drone prototype's `steering` field), a slower base speed
+-- shows that off better and gives the speed tech line more room to feel like an upgrade.
+local base_drone_speed = 0.035
 local get_drone_speed = function(force_index)
-  return (0.066 * (1 + transport_technologies.get_transport_speed_bonus(force_index))) --+ (math.random() / 32)
+  return (base_drone_speed * (1 + transport_technologies.get_transport_speed_bonus(force_index))) --+ (math.random() / 32)
 end
 
 local variation_count = shared.variation_count
@@ -443,6 +447,10 @@ function transport_drone:update_sticker()
     local offset = self.entity.prototype.sticker_box.left_top
     --local force = self.entity.force
 
+    -- Drawn  only_in_alt_mode - with the body sprite back to a generic tank
+    -- shape, this "tray with the item in it" is the only visual indicator of what a drone is
+    -- carrying, so it needs to be visible in normal play, not just with alt mode held down. Alt
+    -- mode still shows it too, same as before - it's just no longer the only time it's drawn.
     self.background_rendering = rendering.draw_sprite
     {
       sprite = "utility/entity_info_dark_background",
@@ -450,10 +458,10 @@ function transport_drone:update_sticker()
       target_offset = offset,
       surface = surface,
       --forces = {force},
-      only_in_alt_mode = true,
       --target_offset = {0, -0.5},
       x_scale = 0.6,
       y_scale = 0.6,
+      only_in_alt_mode = true
     }
 
     self.item_rendering = rendering.draw_sprite
@@ -463,7 +471,6 @@ function transport_drone:update_sticker()
       target_offset = offset,
       surface = surface,
       --forces = {self.entity.force},
-      only_in_alt_mode = true,
       --target_offset = {0, -0.5},
       x_scale = 0.6,
       y_scale = 0.6,
@@ -476,6 +483,7 @@ function transport_drone:update_sticker()
     local surface = self.entity.surface
     local offset = self.entity.prototype.sticker_box.left_top
 
+    -- Same as the held_item case above - always visible, not only_in_alt_mode.
     self.background_rendering = rendering.draw_sprite
     {
       sprite = "utility/entity_info_dark_background",
@@ -483,7 +491,6 @@ function transport_drone:update_sticker()
       target_offset = offset,
       surface = surface,
       --forces = {self.entity.force},
-      only_in_alt_mode = true,
       --target_offset = {0, -0.5},
       x_scale = 0.6,
       y_scale = 0.6,
@@ -496,7 +503,6 @@ function transport_drone:update_sticker()
       target_offset = offset,
       surface = surface,
       --forces = {self.entity.force},
-      only_in_alt_mode = true,
       --target_offset = {0, -0.5},
       x_scale = 0.6,
       y_scale = 0.6,
