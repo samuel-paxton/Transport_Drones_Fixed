@@ -250,13 +250,26 @@ end
 
 local random = math.random
 util.shuffle_table = function(table)
-  --local profiler = helpers.create_profiler()
   for k1, v1 in pairs (table) do
     local k2 = random(#table)
     table[k1], table[k2] = table[k2], table[k1]
   end
-  --game.print({"", game.tick, " - ", profiler})
 end
 
+-- Debug helper for the various depot/drone :say() methods. 1.1 used the
+-- "tutorial-flying-text" entity, which no longer exists in 2.x, so this draws
+-- the text via the rendering API instead - no prototype required.
+util.say = function(entity, text)
+  if not (entity and entity.valid) then return end
+  rendering.draw_text
+  {
+    text = tostring(text),
+    surface = entity.surface,
+    target = entity.position,
+    color = {r = 1, g = 1, b = 1},
+    alignment = "center",
+    time_to_live = 60,
+  }
+end
 
 return util

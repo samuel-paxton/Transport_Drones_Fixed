@@ -344,13 +344,11 @@ function buffer_depot:set_request_mode()
 
   local product_type = product.type
   if product_type == "item" then
-    --self:say("Set to item")
     self.mode = request_mode.item
     return
   end
 
   if product_type == "fluid" then
-    --self:say("Set to fluid")
     self.mode = request_mode.fluid
     return
   end
@@ -655,7 +653,6 @@ function buffer_depot:update_circuit_writer()
           count = condition.constant or 0
         end
         self.circuit_limit = count
-        --self:say("Set limit "..count)
         return
       end
     end
@@ -666,7 +663,7 @@ function buffer_depot:update_circuit_writer()
 end
 
 function buffer_depot:say(string)
-  self.entity.surface.create_entity{name = "tutorial-flying-text", position = self.entity.position, text = string}
+  util.say(self.entity, string)
 end
 
 function buffer_depot:add_to_network()

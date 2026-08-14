@@ -23,7 +23,6 @@ function network_reader.new(entity)
   local force = entity.force
   local surface = entity.surface
 
-  --entity.active = false
   entity.rotatable = false
 
   local depot =
@@ -64,7 +63,7 @@ end
 
 
 function network_reader:say(string)
-  self.entity.surface.create_entity{name = "tutorial-flying-text", position = self.entity.position, text = string}
+  util.say(self.entity, string)
 end
 
 function network_reader:update()

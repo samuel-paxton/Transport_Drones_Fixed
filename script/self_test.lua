@@ -708,6 +708,65 @@ local drain_depots = function()
   log("SELF_TEST: drained the quality item and fluid request depots, restocked the providers")
 end
 
+-- Changing a request depot's item while its drones are still on the road recalls them all through
+-- suicide_all_drones -> drone:suicide(). That path used to call :say(), which in 1.1 spawned a
+-- "tutorial-flying-text" entity - a prototype that no longer exists in 2.x, so the whole save died
+-- with "Unknown entity name: tutorial-flying-text" the moment a player edited a live depot's
+-- request. Put drones in flight for real, then swap the item and drive an update through.
+local check_request_change_in_flight = function()
+  local entity = refs.parameter_request
+  if not (entity and entity.valid) then error("missing the depot for the in-flight request change check") end
+
+  local depot = depot_common.get_depot(entity)
+  local supply = depot_common.get_depot(refs.supply)
+  if not (depot and supply) then error("missing depot objects for the in-flight request change check") end
+
+  -- Nothing stocks stone by default (that's why this depot uses it - see setup), so provide some
+  -- and publish it, and top the fuel back up so the dispatch isn't fuel-starved this late in the run.
+  refs.supply.insert{name = "stone", count = 2000, quality = "normal"}
+  supply:update_contents()
+  refs.fuel_depot.insert_fluid{name = fuel_fluid, amount = 100000}
+  -- Fuel it directly rather than waiting on a fuel delivery - this depot has spent the whole run
+  -- asking for an item nothing stocked, so it has never had a reason to be fuelled.
+  entity.insert_fluid{name = fuel_fluid, amount = 10000}
+  -- Restock its drones too: they sit in the crafter_input inventory, and the parameter-recipe
+  -- phase above voided that when it swapped the recipe by script.
+  give_drones(entity, 5)
+
+  entity.get_output_inventory().clear()
+  depot:update()
+  depot:make_request()
+
+  local in_flight = 0
+  for _, drone in pairs (depot.drones) do
+    if drone.entity and drone.entity.valid then in_flight = in_flight + 1 end
+  end
+  if in_flight == 0 then
+    error("no drones went out, so changing the request wouldn't exercise the recall path at all")
+  end
+
+  -- The player-facing action: pick a different item while those drones are still out.
+  entity.set_recipe("request-copper-plate")
+  depot:update()
+
+  local remaining = 0
+  for _, drone in pairs (depot.drones) do
+    if drone.entity and drone.entity.valid then remaining = remaining + 1 end
+  end
+  if remaining > 0 then
+    error(string.format("%d drone(s) survived a request change that should have recalled them all", remaining))
+  end
+  if depot.item ~= "copper-plate" then
+    error("depot didn't pick up the new request (item = " .. tostring(depot.item) .. ")")
+  end
+
+  -- The debug helper the crash came from. Every call site is commented out now, but it's still
+  -- reachable the moment anyone uncomments one, so check it can't take the game down again.
+  util.say(entity, "self test")
+
+  log(string.format("SELF_TEST: changed a request depot's item with %d drone(s) in flight, all recalled cleanly", in_flight))
+end
+
 -- Staged checks, run once each at the given tick. Anything that throws is recorded and reported
 -- as a FAIL at the end of the run rather than taking the game down.
 local phases =
@@ -725,6 +784,7 @@ local phases =
   [4200] = {name = "surface_deletion_setup", run = check_surface_deletion_setup},
   -- Surface deletion is deferred by the engine (happens between ticks), so verify well after.
   [4800] = {name = "surface_deletion", run = check_surface_deletion},
+  [5100] = {name = "request_change_in_flight", run = check_request_change_in_flight},
   [5900] = {name = "reservation_accounting", run = check_reservation_accounting},
 }
 

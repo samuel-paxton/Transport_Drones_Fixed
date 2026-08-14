@@ -27,13 +27,6 @@ local rename_recipe = function(old, new)
         product[1] = new
       end
     end
-    -- Will have to handle technologies.. so lets do it only when nescessary
-    --if recipe.name == old then
-    --  recipe.name = new
-    --  recipe.localised_name = new
-    --  recipes[new] = recipe
-    --  recipes[old] = nil
-    --end
   end
 end
 
@@ -82,19 +75,11 @@ local rename_recipe = function(old, new)
         product[1] = new
       end
     end
-    -- Will have to handle technologies.. so lets do it only when nescessary
-    --if recipe.name == old then
-    --  recipe.name = new
-    --  recipe.localised_name = new
-    --  recipes[new] = recipe
-    --  recipes[old] = nil
-    --end
   end
 end
 
 
 local remove_from_recipe = function(recipe, name)
-  --log(name)
   if recipe.normal then
     --Screw this half-assed system
     for k, v in pairs (recipe.normal) do
@@ -174,16 +159,12 @@ local remove_item_from_technologies = function(name)
 end
 
 local remove_recipe_from_technologies = function(name)
-  --log("Removing recipe from technologies: "..name)
   local technologies = data.raw.technology
   for k, technology in pairs (technologies) do
     local effects = technology.effects
     if effects then
-      --log(technology.name.." = "..#effects)
       for i = #effects, 1, -1 do
-        --log((effects[i].recipe or "nil").. " == "..name)
         if (effects[i].recipe == name) then
-          --log("Removed from: "..k)
           table.remove(effects, i)
         end
       end
@@ -196,7 +177,6 @@ end
 
 local remove_item_from_recipes = function(name)
   if type(name) ~= "string" then error("I EXPECT A STRING") end
-  --log("Removing item from recipes: "..name)
   local recipes = data.raw.recipe
   for k, recipe in pairs (recipes) do
     local result = remove_from_recipe(recipe, name)
@@ -265,7 +245,6 @@ end
 local remove_entity_prototype = function(ent)
   if not ent then return end
   --So, if we actually delete the prototype, we get some error about traversing old prototypes for migrations or some BS... so we just nuke all items and hide them
-  --log(ent.name)
   remove_from_items(ent.name)
   remove_from_achievements(ent.name)
   ent.minable = nil

@@ -107,7 +107,7 @@ function supply_depot:update()
 end
 
 function supply_depot:say(string)
-  self.entity.surface.create_entity{name = "tutorial-flying-text", position = self.entity.position, text = string}
+  util.say(self.entity, string)
 end
 
 function supply_depot:give_item(quality, requested_name, requested_count)

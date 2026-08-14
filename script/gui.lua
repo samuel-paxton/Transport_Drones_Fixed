@@ -56,7 +56,6 @@ end
 local get_filter_value = function(player)
   local frame = get_frame(player)
   if not frame then return end
-  --game.print(serpent.line(frame.inner_frame.subheader_frame.depot_filter_button.elem_value))
   return frame.inner_frame.subheader_frame.depot_filter_button.elem_value
 end
 
@@ -259,7 +258,6 @@ local add_depot_map_button = function(depot, gui, size)
   button.style.horizontal_align = "center"
   button.style.vertical_align = "center"
   button.style.padding = {0,0,0,0}
-  --button.style.horizontally_stretchable = true
   local entity = depot.entity
   local map = button.add
   {
@@ -272,13 +270,6 @@ local add_depot_map_button = function(depot, gui, size)
   }
   map.style.minimal_width = size
   map.style.minimal_height = size
-  --map.style.horizontally_stretchable = true
-  --local sprite_size = 32
-  --local sprite = map.add{type = "sprite", sprite = "entity/"..depot.entity.name}
-  --local padding = (size / 2) - (sprite_size / 2)
-  --sprite.style.padding = {padding, padding, padding, padding}
-  --sprite.style.width = sprite_size
-  --sprite.style.height = sprite_size
 
 end
 
@@ -303,12 +294,10 @@ local update_supply_tab = function(depots, gui, filter)
 
   for index, depot in pairs (depots) do
     if depot.entity.valid then
-      --local depot_frame = depot_table.add{type = "frame", style = "bordered_frame"}
       local depot_frame = gui[index]
       if not depot_frame then
         depot_frame = gui.add{type = "flow", name = index, direction = "vertical"}
         depot_frame.style.horizontally_stretchable = true
-        --depot_frame.style.vertically_stretchable = true
         depot_frame.style.vertical_align = "top"
         add_depot_map_button(depot, depot_frame, map_size)
       end
@@ -410,7 +399,6 @@ end
 
 local update_fuel_depot_gui = function(depot, gui)
 
-  --local depot_frame = depot_table.add{type = "frame", style = "bordered_frame"}
   local flow = gui.table
 
   if not flow then

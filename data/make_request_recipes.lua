@@ -218,7 +218,6 @@ local fuel_recipe =
   localised_name = {"fuel-depots"},
   icon = util.path("data/entities/transport_depot/fuel-recipe-icon.png"),
   icon_size = 64,
-  --category = "transport",
   enabled = true,
   ingredients =
   {

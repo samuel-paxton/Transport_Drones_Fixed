@@ -23,7 +23,6 @@ function fluid_depot.new(entity)
   local force = entity.force
   local surface = entity.surface
 
-  --entity.active = false
   entity.rotatable = false
 
   local depot =
@@ -125,12 +124,11 @@ function fluid_depot:update()
   end
 
   self:update_contents()
-  --self:say("U")
 
 end
 
 function fluid_depot:say(string)
-  self.entity.surface.create_entity{name = "tutorial-flying-text", position = self.entity.position, text = string}
+  util.say(self.entity, string)
 end
 
 -- quality is accepted-and-ignored on all three of these: transport_drone.lua and the

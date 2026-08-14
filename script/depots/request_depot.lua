@@ -300,13 +300,11 @@ function request_depot:set_request_mode()
 
   local product_type = product.type
   if product_type == "item" then
-    --self:say("Set to item")
     self.mode = request_mode.item
     return
   end
 
   if product_type == "fluid" then
-    --self:say("Set to fluid")
     self.mode = request_mode.fluid
     return
   end
@@ -373,7 +371,6 @@ function request_depot:get_request_size()
 end
 
 function request_depot:get_output_inventory()
-  --return self.entity.get_output_inventory()
   if not self.output_inventory then
     self.output_inventory = self.entity.get_output_inventory()
   end
@@ -385,7 +382,6 @@ function request_depot:get_drone_inventory()
     self.drone_inventory = self.entity.get_inventory(defines.inventory.crafter_input)
                     end
   return self.drone_inventory
-  --return self.entity.get_inventory(defines.inventory.assembling_machine_input)
 end
 
 function request_depot:get_active_drone_count()
@@ -483,7 +479,6 @@ function request_depot:update_circuit_writer()
           count = condition.constant or 0
         end
         self.circuit_limit = count
-        --self:say("Set limit "..count)
         return
       end
     end
@@ -592,7 +587,7 @@ function request_depot:update_sticker()
 end
 
 function request_depot:say(string)
-  self.entity.surface.create_entity{name = "tutorial-flying-text", position = self.entity.position, text = string}
+  util.say(self.entity, string)
 end
 
 function request_depot:add_to_network()

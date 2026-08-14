@@ -103,19 +103,6 @@ if data.raw["assembling-machine"]["mining-depot"] then
   data.raw["assembling-machine"]["mining-depot"].collision_mask = mask
 end
 
---Disable belts on roads
---[[
-  for k, prototype in pairs (collision_mask_util.collect_prototypes_with_layer("transport_belt")) do
-    local mask = collision_mask_util.get_mask(prototype)
-    mask.layers[road_collision_layer] = true
-    prototype.collision_mask = mask
-  end
-]]
-
---error(serpent.block(road_list))
-
---So you don't place any tiles over road.
-
 local util = require "__Transport_Drones__/data/tf_util/tf_util"
 require("data/entities/transport_drone/transport_drone")
 require("data/make_request_recipes")

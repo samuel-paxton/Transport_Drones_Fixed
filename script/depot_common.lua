@@ -141,7 +141,6 @@ local add_depot_to_node = function(depot)
     if depot.entity.valid then
       depot.entity.destroy()
     end
-    --log("Wtf, depot with no node... killing it"..serpent.line(depot))
     return true
   end
   node.depots = node.depots or {}
@@ -338,7 +337,6 @@ local refresh_update_rate = function()
   if script_data.update_rate == update_rate then return end
   script_data.update_rate = update_rate
   refresh_update_buckets()
-  --game.print(script_data.update_rate)
 end
 
 local on_runtime_mod_setting_changed = function(event)

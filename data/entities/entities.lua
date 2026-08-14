@@ -17,7 +17,6 @@ local item =
   subgroup = "transport-drones",
   order = "e-"..name,
   stack_size = 10,
-  --place_result = name
 }
 
 local recipe =
@@ -25,7 +24,6 @@ local recipe =
   type = "recipe",
   name = name,
   localised_name = {name},
-  --category = "transport",
   enabled = false,
   allow_quality = false,
   ingredients =

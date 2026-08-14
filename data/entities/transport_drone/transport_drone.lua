@@ -96,7 +96,6 @@ local make_unit = function()
       }
     },
     healing_per_tick = 0.1,
-    --minable = {result = name, mining_time = 2},
     collision_box = {{-0.01, -0.01}, {0.01, 0.01}},
     selection_box = selection_box,
     -- Zero-sized box at the drone's own position. transport_drone:update_sticker reads
@@ -107,7 +106,6 @@ local make_unit = function()
     collision_mask = shared.drone_collision_mask,
     max_pursue_distance = 64,
     min_persue_time = (60 * 15),
-    --sticker_box = {{-0.2, -0.2}, {0.2, 0.2}},
     distraction_cooldown = (15),
     move_while_shooting = true,
     can_open_gates = true,
@@ -154,7 +152,6 @@ local make_unit = function()
     distance_per_frame = 0.15,
     absorptions_to_join_attack = {pollution = 1000},
     rotation_speed = 1 / 30,
-    --corpse = name.." Corpse",
     dying_explosion = "explosion",
     light =
     {
@@ -202,7 +199,6 @@ local slow_sticker =
 {
   type = "sticker",
   name = "drone-slowdown-sticker",
-  --icon = "__base__/graphics/icons/slowdown-sticker.png",
   flags = {},
   animation =
   {

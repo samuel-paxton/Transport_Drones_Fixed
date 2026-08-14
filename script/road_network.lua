@@ -20,7 +20,6 @@ local new_id = function()
     item_supply = {},
     depots = {}
   }
-  --print("New network "..id)
   return id
 end
 
@@ -154,7 +153,6 @@ local symmetric_connection_check = function(surface, x1, y1, x2, y2)
 
     local node, node_position = next(new_nodes_1)
     if not node then break end
-    --game.surfaces[surface].create_entity{name = "flying-text", position = {node_position[1], node_position[2]}, text = "A"}
     new_nodes_1[node] = nil
     for k, offset in pairs (neighbor_offsets) do
       local nx, ny = node_position[1] + offset[1], node_position[2] + offset[2]
@@ -172,7 +170,6 @@ local symmetric_connection_check = function(surface, x1, y1, x2, y2)
 
     local node, node_position = next(new_nodes_2)
     if not node then break end
-    --game.surfaces[surface].create_entity{name = "flying-text", position = {node_position[1], node_position[2]}, text = "B"}
     new_nodes_2[node] = nil
     for k, offset in pairs (neighbor_offsets) do
       local nx, ny = node_position[1] + offset[1], node_position[2] + offset[2]
@@ -222,7 +219,6 @@ local accumulate_smaller_node = function(surface, x1, y1, x2, y2)
 
     local node, node_position = next(new_nodes_1)
     if not node then return nodes_1 end
-    --game.surfaces[surface].create_entity{name = "flying-text", position = {node_position[1], node_position[2]}, text = "A"}
     new_nodes_1[node] = nil
     for k, offset in pairs (neighbor_offsets) do
       local nx, ny = node_position[1] + offset[1], node_position[2] + offset[2]
@@ -237,7 +233,6 @@ local accumulate_smaller_node = function(surface, x1, y1, x2, y2)
 
     local node, node_position = next(new_nodes_2)
     if not node then return nodes_2 end
-    --game.surfaces[surface].create_entity{name = "flying-text", position = {node_position[1], node_position[2]}, text = "B"}
     new_nodes_2[node] = nil
     for k, offset in pairs (neighbor_offsets) do
       local nx, ny = node_position[1] + offset[1], node_position[2] + offset[2]
@@ -269,11 +264,7 @@ end
 
 local set_node_ids = function(nodes, id)
 
-  --print("Setting nodes "..id)
-
   for node, bool in pairs (nodes) do
-    --local node_position = debug_get_node_postion(node)
-    --game.surfaces[node_position.surface].create_entity{name = "flying-text", position = {node_position.x, node_position.y}, text = id}
 
     node.id = id
 
@@ -292,7 +283,6 @@ end
 
 
 local clear_network = function(id)
-  --print("Clearing "..id)
   local network = script_data.networks[id]
 
   if not network then return end
@@ -401,8 +391,6 @@ road_network.remove_node = function(surface, x, y)
   local node = get_node(surface, x, y)
   if not node then return end
 
-  --print("Removing node "..serpent.line({node.id, x, y}))
-
   if node.depots and next(node.depots) then
     return true
   end
@@ -410,8 +398,6 @@ road_network.remove_node = function(surface, x, y)
   script_data.node_map[surface][x][y] = nil
 
   local count = get_neighbor_count(surface, x, y)
-
-  --game.surfaces[surface].create_entity{name = "flying-text", position = {x, y}, text = count}
 
   if count == 0 then
     -- No neighbors, clear the network.
@@ -483,10 +469,6 @@ road_network.add_depot = function(depot, category)
 end
 
 road_network.remove_depot = function(depot, category)
-  --local x, y = depot.node_position[1], depot.node_position[2]
-  --local surface = depot.entity.surface.index
-  --local node = get_node(surface, x, y)
-  --local network = get_network_by_id(node.id)
 
   local network_id = depot.network_id
   if not network_id then return end

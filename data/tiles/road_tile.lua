@@ -88,7 +88,6 @@ local recipe =
   localised_name = {"road"},
   icon = item.icon,
   icon_size = item.icon_size,
-  --category = "transport",
   enabled = false,
   allow_quality = false,
   ingredients =

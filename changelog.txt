@@ -1,4 +1,9 @@
 ---------------------------------------------------------------------------------------------------
+Version: 2.1.1
+Date: 2026-08-14
+  Bugfixes:
+    - Fixed a crash when changing a request or buffer depot's item while its drones were still out on the road.
+---------------------------------------------------------------------------------------------------
 Version: 2.1.0
 Date: 2026-08-12
   Changes:

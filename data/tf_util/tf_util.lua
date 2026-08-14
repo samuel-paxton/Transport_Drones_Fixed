@@ -87,7 +87,6 @@ recursive_hack_make_hr = function(prototype)
     if type(v) == "table" then
       if is_sprite_def(v) and v.hr_version then
         prototype[k] = v.hr_version
-        --v.scale = v.scale * 0.5
         v.hr_version = nil
       end
       recursive_hack_make_hr(v)

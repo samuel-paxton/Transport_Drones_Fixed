@@ -3,8 +3,6 @@
 local data = {}
 
 data.drone_collision_mask = {layers = {}} -- overwritten in data-final-fixes.lua
---data.drone_collision_mask = {layers = {ground_tile = true, water_tile = true}, not_colliding_with_itself = true, colliding_with_tiles_only = true}
---data.drone_collision_mask = {layers = {ground_tile = true, water_tile = true}}
 -- variation_count/special_variation_count used to live here: the drone came in 50 near-identical
 -- variations (plus per-cargo "special" families). There's one drone prototype now - see
 -- data/entities/transport_drone/transport_drone.lua.

@@ -128,8 +128,6 @@ transport_drone.new = function(request_depot)
   setmetatable(drone, transport_drone.metatable)
   add_drone(drone)
 
-  --entity.ai_settings.path_resolution_modifier = 0
-
   return drone
 end
 
@@ -226,7 +224,6 @@ function transport_drone:retry_command()
   end
 
   if self.state == states.waiting_for_reorder then
-    self:say("Forgive me master")
     self:suicide()
     return
   end
@@ -246,12 +243,9 @@ function transport_drone:process_failed_command()
 
   if (self.failed_command_count or 0) < 2 then
     self.failed_command_count = (self.failed_command_count or 0) + 1
-    self:say("R")
     self:retry_command()
     return
   end
-
-  self:say("F")
 
   if self.state == states.going_to_supply then
     self:return_to_requester()
@@ -264,7 +258,6 @@ function transport_drone:process_failed_command()
   end
 
   if self.state == states.waiting_for_reorder then
-    self:say("Forgive me master")
     self:suicide()
     return
   end
@@ -431,7 +424,6 @@ function transport_drone:update_sticker()
 
     local surface = self.entity.surface
     local offset = self.entity.prototype.sticker_box.left_top
-    --local force = self.entity.force
 
     -- This pair (dark plate + item icon) is the big, highly legible read-at-a-glance indicator, so
     -- it stays alt-mode-only - showing it permanently is far too loud once there are a lot of
@@ -444,9 +436,7 @@ function transport_drone:update_sticker()
       target = self.entity,
       target_offset = offset,
       surface = surface,
-      --forces = {force},
       only_in_alt_mode = true,
-      --target_offset = {0, -0.5},
       x_scale = 0.6,
       y_scale = 0.6,
     }
@@ -457,9 +447,7 @@ function transport_drone:update_sticker()
       target = self.entity,
       target_offset = offset,
       surface = surface,
-      --forces = {self.entity.force},
       only_in_alt_mode = true,
-      --target_offset = {0, -0.5},
       x_scale = 0.6,
       y_scale = 0.6,
     }
@@ -478,9 +466,7 @@ function transport_drone:update_sticker()
       target = self.entity,
       target_offset = offset,
       surface = surface,
-      --forces = {self.entity.force},
       only_in_alt_mode = true,
-      --target_offset = {0, -0.5},
       x_scale = 0.6,
       y_scale = 0.6,
     }
@@ -491,9 +477,7 @@ function transport_drone:update_sticker()
       target = self.entity,
       target_offset = offset,
       surface = surface,
-      --forces = {self.entity.force},
       only_in_alt_mode = true,
-      --target_offset = {0, -0.5},
       x_scale = 0.6,
       y_scale = 0.6,
     }
@@ -503,7 +487,6 @@ function transport_drone:update_sticker()
 end
 
 function transport_drone:suicide()
-  self:say("S")
 
   self:clear_drone_data()
 
@@ -532,13 +515,7 @@ function transport_drone:process_return_to_requester()
     self.fuel_amount = nil
   end
 
-  --self:update_sticker()
   self:refund_fuel()
-
-  --if self.supply_depot then
-  --  self:wait_for_reorder()
-  --  return
-  --end
 
   self:remove_from_depot()
 
@@ -562,10 +539,8 @@ function transport_drone:refund_fuel()
   local pollution = (age / 60) * drone_pollution_per_second
   game.get_pollution_statistics(self.entity.surface).on_flow("transport-drone-1", pollution)
 
-  --self:say(consumption)
   self.entity.force.get_fluid_production_statistics(self.entity.surface).on_flow(get_fuel_fluid(), -consumption)
   local fuel_refund = fuel_amount_per_drone - consumption
-  --self:say(fuel_refund)
 
   if fuel_refund > 0 then
     self.request_depot.entity.insert_fluid({name = get_fuel_fluid(), amount = fuel_refund})
@@ -614,7 +589,7 @@ function transport_drone:update(event)
 end
 
 function transport_drone:say(text)
-  self.entity.surface.create_entity{name = "tutorial-flying-text", position = self.entity.position, text = text}
+  util.say(self.entity, text)
 end
 
 function transport_drone:go_to_position(position, radius)
@@ -658,20 +633,6 @@ function transport_drone:go_to_depot(depot, radius, sprite_switch)
     self:suicide()
     return
   end
-  --if sprite_switch then
-  --  local proxy = self.entity.surface.create_entity
-  --  {
-  --    name = "sprite-switch-proxy",
-  --    position = self.entity.position,
-  --    force = "neutral"
-  --  }
-  --  insert(commands,
-  --  {
-  --    type = defines.command.attack,
-  --    target = proxy,
-  --    distraction = defines.distraction.none
-  --  })
-  --end
 
   -- This radius is what keeps drones from piling up on the exact same spot at a depot: they stop
   -- anywhere within it rather than all converging on the corpse. It replaces the old trick of
@@ -719,9 +680,6 @@ function transport_drone:clear_drone_data()
 end
 
 function transport_drone:handle_drone_deletion()
-  if self.entity.valid then
-    self:say("D")
-  end
 
   self:clear_drone_data()
 
@@ -851,7 +809,6 @@ local on_tick = function(event)
       local final_position = {player_position.x + dx, player_position.y + dy}
       player.teleport(final_position)
       if player.character then
-        --player.character.walking_state = {walking = false, direction = to_direction(drone.entity.orientation)}
         player.character.direction = to_direction(get_orientation(player_position, final_position))
       end
     end
@@ -891,10 +848,6 @@ end
 
 transport_drone.events =
 {
-  --[defines.events.on_built_entity] = on_built_entity,
-  --[defines.events.on_robot_built_entity] = on_built_entity,
-  --[defines.events.script_raised_revive] = on_built_entity,
-  --[defines.events.script_raised_built] = on_built_entity,
 
   [defines.events.on_player_mined_entity] = on_entity_removed,
   [defines.events.on_robot_mined_entity] = on_entity_removed,

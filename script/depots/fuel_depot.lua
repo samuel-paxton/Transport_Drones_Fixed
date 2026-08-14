@@ -99,7 +99,6 @@ end
 function fuel_depot:update()
   self:check_drone_validity()
   self:update_sticker()
-  --game.print("AHOY!")
 end
 
 function fuel_depot:add_to_network()
@@ -179,7 +178,7 @@ function fuel_depot:handle_fuel_request(depot)
 end
 
 function fuel_depot:say(string)
-  self.entity.surface.create_entity{name = "tutorial-flying-text", position = self.entity.position, text = string}
+  util.say(self.entity, string)
 end
 
 
