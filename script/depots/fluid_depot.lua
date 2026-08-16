@@ -89,19 +89,19 @@ function fluid_depot:update_contents()
   -- supply_depot.lua for why. Only request/buffer depots are circuit-gateable.
   local box = self:get_output_fluidbox()
   if box then
-    new_contents[box.name] = box.amount
+    util.set_quality_item(new_contents, util.normal_quality, box.name, box.amount)
   end
 
-  for name, count in pairs (self.old_contents) do
-    if not new_contents[name] then
+  util.for_each_quality_item(self.old_contents, function(quality, name, count)
+    if not util.get_quality_item(new_contents, quality, name) then
       util.set_network_supply(supply, util.normal_quality, name, self.index, nil)
     end
-  end
+  end)
 
-  for name, count in pairs (new_contents) do
+  util.for_each_quality_item(new_contents, function(quality, name, count)
     local new_count = count - self:get_to_be_taken(name)
     util.set_network_supply(supply, util.normal_quality, name, self.index, new_count > 0 and new_count or nil)
-  end
+  end)
 
   self.old_contents = new_contents
 
