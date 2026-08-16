@@ -184,7 +184,8 @@ local make_unit = function()
     {
       sound = sprite_base.working_sound.main_sounds[1].sound,
       max_sounds_per_type = 5,
-      audible_distance_modifier = 0.7
+      audible_distance_modifier = 0.7,
+      volume_multiplier = 0.5
     },
     run_animation = make_body_animation(),
     affected_by_tiles = affected_by_tiles,
