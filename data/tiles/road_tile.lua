@@ -103,19 +103,20 @@ local fast_recipe =
 {
   type = "recipe",
   name = "fast-road",
-  localised_name = {"fast-road"},
+  localised_name = { "fast-road" },
   icon = better_item.icon,
   icon_size = better_item.icon_size,
-  categories = {"crafting-with-fluid"},
+  categories = { "crafting-with-fluid" },
   enabled = false,
   allow_quality = false,
   ingredients =
   {
-    {type = "item", name = "concrete", amount = 10},
-    {type = "fluid", name = "crude-oil", amount = 50},
+    { type = "item", name = "concrete", amount = 10 },
+    { type = "fluid", name = "crude-oil", amount = 50 },
+    { type = "item", name = "road", amount = 10 }
   },
   energy_required = 1,
-  results = {{type = "item", name = "fast-road", amount = 10}}
+  results = { { type = "item", name = "fast-road", amount = 10 } }
 }
 
 data:extend
