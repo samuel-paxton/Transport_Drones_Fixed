@@ -32,18 +32,46 @@ local name = "transport-drone"
 
 local transport_drone_flags = {"placeable-off-grid", "not-in-kill-statistics"}
 
--- Classic look: the drone body is just a scaled-down copy of the Tank's own animation (base
--- layer + runtime-tinted mask layer + shadow layer), instead of the old bespoke truck/ore/fluid
--- masked sprites. What the drone is actually carrying is now shown by a sticker drawn on top at
--- runtime (see transport_drone:update_sticker in script/transport_drone.lua) rather than baked
--- into a per-resource/per-fluid body texture, so we don't need a separate body prototype per
--- cargo type any more.
 local sprite_base = util.copy(data.raw.car.tank)
-util.recursive_hack_make_hr(sprite_base) -- no-op on modern (non hr_version) sprites, kept just in case
-util.recursive_hack_scale(sprite_base, 0.5)
 
-local make_body_animation = function()
-  return util.copy(sprite_base.animation)
+local tank_graphics = function (tint)
+  local head_scale = 0.25 * (0.5 / 0.33)
+  local head_shift = { 0, -0.35 }
+  local tank_scale = 0.33 * (0.5 / 0.33)
+
+  ---@diagnostic disable-next-line: undefined-global
+  local spidertron = spidertron_torso_graphics_set(head_scale)
+  local tank = util.copy(data.raw.car.tank)
+
+  local layers = {}
+  for _, layer in pairs(tank.animation.layers) do
+    layer.scale = layer.scale * tank_scale
+    if layer.shift then
+      layer.shift = { layer.shift[1] * tank_scale, layer.shift[2] * tank_scale }
+    end
+    layer.frame_count = 2
+    layer.max_advance = nil
+    if tint and not layer.draw_as_shadow then
+      layer.tint = tint
+    end
+    table.insert(layers, layer)
+  end
+  for _, layer in pairs(spidertron.animation.layers) do
+    layer.repeat_count = 2
+    if layer.shift then
+      layer.shift = { layer.shift[1] + head_shift[1], layer.shift[2] + head_shift[2] }
+    end
+    table.insert(layers, layer)
+  end
+  local shadow = spidertron.shadow_animation
+  shadow.repeat_count = 2
+  if shadow.shift then
+    shadow.shift = { shadow.shift[1] + head_shift[1], shadow.shift[2] + head_shift[2] }
+  end
+  shadow.draw_as_shadow = true
+  table.insert(layers, shadow)
+
+  return { layers = layers }
 end
 
 local drone_steering =
@@ -143,7 +171,7 @@ local make_unit = function()
           }
         }
       },
-      animation = make_body_animation()
+      animation = tank_graphics()
     },
     vision_distance = 40,
     has_belt_immunity = true,
@@ -187,7 +215,7 @@ local make_unit = function()
       audible_distance_modifier = 0.7,
       volume_multiplier = 0.5
     },
-    run_animation = make_body_animation(),
+    run_animation = tank_graphics(),
     affected_by_tiles = affected_by_tiles,
     emissions_per_second = {pollution = shared.drone_pollution_per_second}
   }
