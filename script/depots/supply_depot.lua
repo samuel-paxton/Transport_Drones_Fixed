@@ -10,11 +10,11 @@ supply_depot.corpse_offsets =
   [defines.direction.west] = {-2, 0},
 }
 
-local get_corpse_position = function(entity)
+local get_corpse_position = function(entity, corpse_offsets)
 
   local position = entity.position
   local direction = entity.direction
-  local offset = supply_depot.corpse_offsets[direction]
+  local offset = corpse_offsets[direction]
   return {position.x + offset[1], position.y + offset[2]}
 
 end
@@ -25,7 +25,7 @@ end
 -- entity. That also means it can no longer be circuit-disabled - plain containers don't support
 -- circuit_condition/enable-disable at all, only reading contents - so a supply depot always
 -- offers its stock to the network; only request/buffer depots are circuit-gateable now.
-function supply_depot.new(entity, tags)
+local new_depot = function(lib, entity, tags)
 
   entity.rotatable = false
 
@@ -36,7 +36,7 @@ function supply_depot.new(entity, tags)
     index = tostring(entity.unit_number),
     old_contents = {}
   }
-  setmetatable(depot, supply_depot.metatable)
+  setmetatable(depot, lib.metatable)
 
   depot:get_corpse()
   depot:read_tags(tags)
@@ -45,12 +45,28 @@ function supply_depot.new(entity, tags)
 
 end
 
+function supply_depot.new(entity, tags)
+  return new_depot(supply_depot, entity, tags)
+end
+
+-- A depot sharing all of this behaviour but with a different footprint, so a different road node
+-- offset (the miniature depots). Its depots get the variant's own metatable, so on_load finds the
+-- right corpse_offsets again through the entity name.
+function supply_depot.make_variant(corpse_offsets)
+  local variant = setmetatable({corpse_offsets = corpse_offsets}, {__index = supply_depot})
+  variant.metatable = {__index = variant}
+  variant.new = function(entity, tags)
+    return new_depot(variant, entity, tags)
+  end
+  return variant
+end
+
 function supply_depot:get_corpse()
   if self.corpse and self.corpse.valid then
     return self.corpse
   end
 
-  local corpse_position = get_corpse_position(self.entity)
+  local corpse_position = get_corpse_position(self.entity, self.corpse_offsets)
   local corpse = self.entity.surface.create_entity{name = "transport-caution-corpse", position = corpse_position}
   corpse.corpse_expires = false
   self.corpse = corpse

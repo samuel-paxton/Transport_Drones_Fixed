@@ -20,11 +20,11 @@ local get_fuel_fluid = function()
   return fuel_fluid
 end
 
-local get_corpse_position = function(entity)
+local get_corpse_position = function(entity, corpse_offsets)
 
   local position = entity.position
   local direction = entity.direction
-  local offset = request_depot.corpse_offsets[direction]
+  local offset = corpse_offsets[direction]
   return {position.x + offset[1], position.y + offset[2]}
 
 end
@@ -35,7 +35,7 @@ local request_mode =
   fluid = 2
 }
 
-function request_depot.new(entity, tags)
+local new_depot = function(lib, entity, tags)
 
   local force = entity.force
   local surface = entity.surface
@@ -53,7 +53,7 @@ function request_depot.new(entity, tags)
     mode = request_mode.item,
     fuel_on_the_way = 0
   }
-  setmetatable(depot, request_depot.metatable)
+  setmetatable(depot, lib.metatable)
 
   depot:get_corpse()
   depot:read_tags(tags)
@@ -62,12 +62,28 @@ function request_depot.new(entity, tags)
 
 end
 
+function request_depot.new(entity, tags)
+  return new_depot(request_depot, entity, tags)
+end
+
+-- A depot sharing all of this behaviour but with a different footprint, so a different road node
+-- offset (the miniature depots). Its depots get the variant's own metatable, so on_load finds the
+-- right corpse_offsets again through the entity name.
+function request_depot.make_variant(corpse_offsets)
+  local variant = setmetatable({corpse_offsets = corpse_offsets}, {__index = request_depot})
+  variant.metatable = {__index = variant}
+  variant.new = function(entity, tags)
+    return new_depot(variant, entity, tags)
+  end
+  return variant
+end
+
 function request_depot:get_corpse()
   if self.corpse and self.corpse.valid then
     return self.corpse
   end
 
-  local corpse_position = get_corpse_position(self.entity)
+  local corpse_position = get_corpse_position(self.entity, self.corpse_offsets)
   local corpse = self.entity.surface.create_entity{name = "transport-caution-corpse", position = corpse_position}
   corpse.corpse_expires = false
   self.corpse = corpse

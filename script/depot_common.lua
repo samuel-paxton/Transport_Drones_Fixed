@@ -36,6 +36,17 @@ add_depot_lib("fluid-depot", require("script/depots/fluid_depot"))
 add_depot_lib("buffer-depot", require("script/depots/buffer_depot"))
 add_depot_lib("road-network-reader", require("script/depots/network_reader"))
 
+-- The miniature depots only differ in footprint: 1x1, so the road node sits one tile off the side.
+local mini_corpse_offsets =
+{
+  [defines.direction.north] = {0, -1},
+  [defines.direction.east] = {1, 0},
+  [defines.direction.south] = {0, 1},
+  [defines.direction.west] = {-1, 0},
+}
+add_depot_lib("mini-request-depot", require("script/depots/request_depot").make_variant(mini_corpse_offsets))
+add_depot_lib("mini-supply-depot", require("script/depots/supply_depot").make_variant(mini_corpse_offsets))
+
 local match = "transport_drones_add_"
 for name, setting in pairs (settings.startup) do
   if name:find(match) then
