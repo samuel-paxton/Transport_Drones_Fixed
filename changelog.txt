@@ -1,4 +1,13 @@
 ---------------------------------------------------------------------------------------------------
+Version: 2.1.4
+Date: 2026-09-27
+  Features:
+    - Added Miniature request and supply depots (1x1), unlocked by the new Miniature transport depots technology. The miniature request depot can only request items.
+  Graphics:
+    - Transport drones now have a spidertron head.
+  Bugfixes:
+    - Warn in game when the drone fuel setting isn't a valid fluid name, instead of silently falling back to petroleum gas.
+---------------------------------------------------------------------------------------------------
 Version: 2.1.3
 Date: 2026-08-18
   Changes:
