@@ -509,4 +509,69 @@ end
 
 lib.get_depot_by_index = get_depot_by_index
 
+-- Registers one existing entity as a depot. Unlike a fresh build this must never refund or destroy
+-- anything: the player's depot and its contents are already on the map.
+local adopt_entity = function(entity)
+  if get_depot(entity) then return true end
+  local depot_lib = depot_libs[entity.name]
+  if not depot_lib.corpse_offsets[entity.direction] then return false end
+  if not attempt_to_place_node(entity, depot_lib) then return false end
+
+  local depot = depot_lib.new(entity)
+  script.register_on_object_destroyed(entity)
+  depot.surface_index = entity.surface.index
+  script_data.depots[depot.index] = depot
+  if add_depot_to_node(depot) then return false end
+  depot:add_to_network()
+  add_to_update_bucket(depot.index)
+  return true
+end
+
+-- Factorio stores script data per mod name, so a save switching over from another mod with these
+-- same prototypes keeps every entity but none of the bookkeeping. Pick the existing depots back up.
+-- The drones on the road can't be recovered (what they carry only existed in that script data) and
+-- the old caution plates would be duplicated by the new ones, so both are cleared first.
+lib.adopt_existing_depots = function()
+  local names = {}
+  for name in pairs (depot_libs) do
+    if prototypes.entity[name] then
+      insert(names, name)
+    end
+  end
+
+  local found = {}
+  for _, surface in pairs (game.surfaces) do
+    for _, entity in pairs (surface.find_entities_filtered{name = names}) do
+      insert(found, entity)
+    end
+  end
+  if not found[1] then return end
+
+  road_network.rebuild_nodes()
+
+  local leftovers = {}
+  for _, name in pairs {"transport-drone-1", "transport-caution-corpse", "invisible-transport-caution-corpse"} do
+    if prototypes.entity[name] then
+      insert(leftovers, name)
+    end
+  end
+  for _, surface in pairs (game.surfaces) do
+    for _, entity in pairs (surface.find_entities_filtered{name = leftovers}) do
+      entity.destroy()
+    end
+  end
+
+  local adopted, failed = 0, 0
+  for _, entity in pairs (found) do
+    if adopt_entity(entity) then
+      adopted = adopted + 1
+    else
+      failed = failed + 1
+      log("Could not adopt " .. entity.name .. " at " .. serpent.line(entity.position))
+    end
+  end
+  log("Adopted " .. adopted .. " existing depots, " .. failed .. " failed")
+  game.print({"depots-adopted", adopted, failed})
+end
+
 return lib

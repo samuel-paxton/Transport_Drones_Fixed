@@ -1,5 +1,5 @@
 {
-  "name": "Transport_Drones",
+  "name": "Transport_Drones_Fixed",
   "version": "2.1.4",
   "title": "Transport Drones",
   "author": "Klonan",
@@ -7,6 +7,7 @@
   "homepage": "",
   "description": "Adds transport drones and transport depots",
   "dependencies": ["base >= 2.1.0",
+    "! Transport_Drones",
     "(?)deadlock_stacked_recipes",
     "(?)space-exploration-postprocess",
     "(?)Krastorio2",

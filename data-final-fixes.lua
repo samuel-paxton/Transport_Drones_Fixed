@@ -11,7 +11,7 @@ local road_tile_list =
   type = "selection-tool",
   name = "road-tile-list",
   hidden = true,
-  icon = "__Transport_Drones__/data/tf_util/empty-sprite.png",
+  icon = "__Transport_Drones_Fixed__/data/tf_util/empty-sprite.png",
   icon_size = 1,
   stack_size = 1,
   select =
@@ -103,6 +103,6 @@ if data.raw["assembling-machine"]["mining-depot"] then
   data.raw["assembling-machine"]["mining-depot"].collision_mask = mask
 end
 
-local util = require "__Transport_Drones__/data/tf_util/tf_util"
+local util = require "__Transport_Drones_Fixed__/data/tf_util/tf_util"
 require("data/entities/transport_drone/transport_drone")
 require("data/make_request_recipes")

@@ -812,7 +812,7 @@ local on_gui_click = function(event)
   if not (player and player.valid) then return end
 
   if not get_frame(player) then return end
-  if gui.get_mod() ~= "Transport_Drones" then return end
+  if gui.get_mod() ~= "Transport_Drones_Fixed" then return end
 
   if gui.name:find("open_depot_map_") then
     local depot_index = gui.name:sub(("open_depot_map_"):len() + 1)

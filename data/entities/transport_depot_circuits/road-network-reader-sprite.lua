@@ -5,7 +5,7 @@ return
     layers =
     {
       {
-        filename = "__Transport_Drones__/data/entities/transport_depot_circuits/road-network-reader.png",
+        filename = "__Transport_Drones_Fixed__/data/entities/transport_depot_circuits/road-network-reader.png",
         frame_count = 1,
         height = 102,
         priority = "high",
@@ -42,7 +42,7 @@ return
     layers =
     {
       {
-        filename = "__Transport_Drones__/data/entities/transport_depot_circuits/road-network-reader.png",
+        filename = "__Transport_Drones_Fixed__/data/entities/transport_depot_circuits/road-network-reader.png",
         frame_count = 1,
         height = 102,
         priority = "high",
@@ -79,7 +79,7 @@ return
     layers =
     {
       {
-        filename = "__Transport_Drones__/data/entities/transport_depot_circuits/road-network-reader.png",
+        filename = "__Transport_Drones_Fixed__/data/entities/transport_depot_circuits/road-network-reader.png",
         frame_count = 1,
         height = 102,
         priority = "high",
@@ -116,7 +116,7 @@ return
     layers =
     {
       {
-        filename = "__Transport_Drones__/data/entities/transport_depot_circuits/road-network-reader.png",
+        filename = "__Transport_Drones_Fixed__/data/entities/transport_depot_circuits/road-network-reader.png",
         frame_count = 1,
         height = 102,
         priority = "high",

@@ -662,6 +662,7 @@ road_network.on_configuration_changed = function()
 
 end
 
+road_network.rebuild_nodes = reset
 road_network.get_network_by_id = get_network_by_id
 road_network.get_node = get_node
 road_network.get_networks = function()

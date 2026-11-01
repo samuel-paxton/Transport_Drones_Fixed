@@ -41,6 +41,30 @@ local on_research_changed = function(event)
 
 end
 
+-- Research finished before this mod was added to a save raises no events, so work the bonuses out
+-- from the technologies themselves. An unresearched finite level says nothing about the levels
+-- before it, so only a multi-level technology may count its current level minus one.
+local rebuild_from_research = function()
+  for _, force in pairs (game.forces) do
+    local best = {}
+    for name, technology in pairs (force.technologies) do
+      for effect_name in pairs (technology_effects) do
+        if name:find(effect_name, 0, true) then
+          local level = 0
+          if technology.researched then
+            level = technology.level
+          elseif technology.prototype.max_level > technology.prototype.level and technology.level > technology.prototype.level then
+            level = technology.level - 1
+          end
+          best[effect_name] = math.max(best[effect_name] or 0, level)
+        end
+      end
+    end
+    script_data.transport_speed[force.index] = (best[shared.transport_speed_technology] or 0) * 0.2
+    script_data.transport_capacity[force.index] = best[shared.transport_capacity_technology] or 0
+  end
+end
+
 local lib = {}
 
 lib.get_transport_speed_bonus = function(force_index)
@@ -57,6 +81,7 @@ end
 
 lib.on_init = function()
   storage.transport_technologies = storage.transport_technologies or script_data
+  rebuild_from_research()
 end
 
 lib.events =
