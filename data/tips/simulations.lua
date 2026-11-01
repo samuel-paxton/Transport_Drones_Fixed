@@ -100,7 +100,7 @@ local make = function(body, options)
   -- nothing but a pile of inert entities without this mod's control.lua to register the depots and
   -- drive the drones. The base game's own simulations never need this because they only ever use
   -- entities the engine already knows how to run.
-  simulation.mods = {"Transport_Drones"}
+  simulation.mods = {"Transport_Drones_Fixed"}
   return simulation
 end
 
