@@ -69,14 +69,6 @@ local transport_circuits =
   {
     {
       type = "unlock-recipe",
-      recipe = "transport-depot-writer"
-    },
-    {
-      type = "unlock-recipe",
-      recipe = "transport-depot-reader"
-    },
-    {
-      type = "unlock-recipe",
       recipe = "road-network-reader"
     },
   },
@@ -128,3 +120,40 @@ local better_road =
 }
 
 data:extend{better_road}
+
+local miniature_depots =
+{
+  name = "miniature-transport-depots",
+  localised_name = {"miniature-transport-depots"},
+  localised_description = {"miniature-transport-depots-description"},
+  type = "technology",
+  icon = util.path("data/technologies/transport-system.png"),
+  icon_size = 256,
+  upgrade = false,
+  effects =
+  {
+    {
+      type = "unlock-recipe",
+      recipe = "mini-request-depot"
+    },
+    {
+      type = "unlock-recipe",
+      recipe = "mini-supply-depot"
+    }
+  },
+  prerequisites = {name, "chemical-science-pack"},
+  unit =
+  {
+    count = 300,
+    ingredients =
+    {
+      {"automation-science-pack", 1},
+      {"logistic-science-pack", 1},
+      {"chemical-science-pack", 1},
+    },
+    time = 30
+  },
+  order = name.."y",
+}
+
+data:extend{miniature_depots}

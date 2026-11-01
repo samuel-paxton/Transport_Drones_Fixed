@@ -3,10 +3,10 @@ local network_reader = {}
 network_reader.metatable = {__index = network_reader}
 network_reader.corpse_offsets =
 {
-  [0] = {0, 1},
-  [2] = {-1, 0},
-  [4] = {0, -1},
-  [6] = {1, 0},
+  [defines.direction.north] = {0, 1},
+  [defines.direction.east] = {-1, 0},
+  [defines.direction.south] = {0, -1},
+  [defines.direction.west] = {1, 0},
 }
 
 local get_corpse_position = function(entity)
@@ -23,7 +23,6 @@ function network_reader.new(entity)
   local force = entity.force
   local surface = entity.surface
 
-  --entity.active = false
   entity.rotatable = false
 
   local depot =
@@ -64,22 +63,24 @@ end
 
 
 function network_reader:say(string)
-  self.entity.surface.create_entity{name = "tutorial-flying-text", position = self.entity.position, text = string}
+  util.say(self.entity, string)
 end
 
 function network_reader:update()
   local behavior = self.entity.get_control_behavior()
   if not behavior then return end
 
-  local signal = behavior.get_signal(1)
+  local signal = util.get_combinator_signal(behavior, 1)
   local name = signal.signal and signal.signal.name
   if not name then return end
+  local quality = signal.signal.quality or util.normal_quality
 
   local supply = self.road_network.get_network_item_supply(self.network_id)
   if not supply then return end
 
   local sum = 0
-  local counts = supply[name]
+  local by_quality = supply[quality]
+  local counts = by_quality and by_quality[name]
   if counts then
     for depot, count in pairs (counts) do
       sum = sum + count
@@ -87,12 +88,13 @@ function network_reader:update()
   end
 
   signal.count = sum
-  behavior.set_signal(1, signal)
+  util.set_combinator_signal(behavior, 1, signal)
 
 end
 
 function network_reader:add_to_network()
-  self.network_id = self.road_network.get_node(self.entity.surface.index, self.node_position[1], self.node_position[2]).id
+  local node = self.road_network.get_node(self.entity.surface.index, self.node_position[1], self.node_position[2])
+  self.network_id = node and node.id
 end
 
 function network_reader:remove_from_network()
@@ -100,7 +102,9 @@ function network_reader:remove_from_network()
 end
 
 function network_reader:on_removed()
-  self.corpse.destroy()
+  if self.corpse and self.corpse.valid then
+    self.corpse.destroy()
+  end
 end
 
 return network_reader

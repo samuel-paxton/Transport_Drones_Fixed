@@ -1,8 +1,4 @@
-local util = require("data/tf_util/tf_util")
-
-local path = function(string)
-  return util.path("data/tips/"..string)
-end
+local simulations = require("data/tips/simulations")
 
 local tips =
 {
@@ -26,7 +22,7 @@ local tips =
     },
     is_title = true,
     indent = 0,
-    image = path("transport_drones.png"),
+    simulation = simulations.overview,
     category = "transport-drones",
   },
   {
@@ -37,7 +33,7 @@ local tips =
     order = "b",
     dependencies = {"transport-drones"},
     indent = 1,
-    image = path("road_network.png"),
+    simulation = simulations.road_network,
     category = "transport-drones",
     tag = "[item=road]"
   },
@@ -49,7 +45,7 @@ local tips =
     order = "c",
     dependencies = {"transport-drones"},
     indent = 1,
-    image = path("transport_drones.png"),
+    simulation = simulations.drones,
     category = "transport-drones",
     tag = "[item=transport-drone]"
   },
@@ -63,7 +59,7 @@ local tips =
     dependencies = {"transport-drones"},
     category = "transport-drones",
     indent = 1,
-    image = path("transport_depots.png"),
+    simulation = simulations.depots,
     tag = "[technology=transport-system]"
   },
   {
@@ -75,7 +71,7 @@ local tips =
     dependencies = {"transport-drones"},
     category = "transport-drones",
     indent = 2,
-    image = path("fuel_depot.png"),
+    simulation = simulations.fuel_depots,
     tag = "[item=fuel-depot]"
   },
   {
@@ -87,7 +83,7 @@ local tips =
     dependencies = {"transport-drones"},
     category = "transport-drones",
     indent = 2,
-    image = path("request_depot_1.png"),
+    simulation = simulations.request_depots,
     tag = "[item=request-depot]"
   },
   {
@@ -99,7 +95,7 @@ local tips =
     dependencies = {"transport-drones"},
     category = "transport-drones",
     indent = 2,
-    image = path("supply_depot.png"),
+    simulation = simulations.supply_depots,
     tag = "[item=supply-depot]"
   },
   {
@@ -111,56 +107,20 @@ local tips =
     dependencies = {"transport-drones"},
     category = "transport-drones",
     indent = 2,
-    image = path("buffer_depot.png"),
+    simulation = simulations.buffer_depots,
     tag = "[item=buffer-depot]"
-  },
-  {
-    type = "tips-and-tricks-item",
-    name = "circuit-connectors",
-    localised_name = {"transport_drones.title_circuit_connectors"},
-    localised_description = {"transport_drones_pages.circuit-connectors"},
-    order = "i",
-    dependencies = {"transport-drones"},
-    category = "transport-drones",
-    indent = 1,
-    image = path("circuit_connectors.png"),
-    tag = "[technology=transport-depot-circuits]"
-  },
-  {
-    type = "tips-and-tricks-item",
-    name = "depot-reader",
-    localised_name = {"transport_drones.title_depot_reader"},
-    localised_description = {"transport_drones_pages.depot-reader"},
-    order = "j",
-    dependencies = {"transport-drones"},
-    category = "transport-drones",
-    indent = 2,
-    image = path("depot_reader.png"),
-    tag = "[item=transport-depot-reader]"
-  },
-  {
-    type = "tips-and-tricks-item",
-    name = "depot-writer",
-    localised_name = {"transport_drones.title_depot_writer"},
-    localised_description = {"transport_drones_pages.depot-writer"},
-    order = "k",
-    dependencies = {"transport-drones"},
-    category = "transport-drones",
-    indent = 2,
-    image = path("depot_writer.png"),
-    tag = "[item=transport-depot-writer]"
   },
   {
     type = "tips-and-tricks-item",
     name = "network-reader",
     localised_name = {"transport_drones.title_network_reader"},
     localised_description = {"transport_drones_pages.network-reader"},
-    order = "l",
+    order = "j",
     dependencies = {"transport-drones"},
     category = "transport-drones",
-    indent = 2,
-    image = path("network_reader.png"),
-    tag = "[item=transport-depot-reader]"
+    indent = 1,
+    simulation = simulations.network_reader,
+    tag = "[item=road-network-reader]"
   },
 
 

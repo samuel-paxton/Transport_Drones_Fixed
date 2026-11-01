@@ -56,7 +56,6 @@ end
 local get_filter_value = function(player)
   local frame = get_frame(player)
   if not frame then return end
-  --game.print(serpent.line(frame.inner_frame.subheader_frame.depot_filter_button.elem_value))
   return frame.inner_frame.subheader_frame.depot_filter_button.elem_value
 end
 
@@ -74,7 +73,7 @@ local get_item_icon_and_locale = function(name)
     return cache[name]
   end
 
-  local items = game.item_prototypes
+  local items = prototypes.item
   if items[name] then
     local icon = "item/"..name
     local locale = items[name].localised_name
@@ -83,7 +82,7 @@ local get_item_icon_and_locale = function(name)
     return value
   end
 
-  local fluids = game.fluid_prototypes
+  local fluids = prototypes.fluid
   if fluids[name] then
     local icon = "fluid/"..name
     local locale = fluids[name].localised_name
@@ -100,14 +99,14 @@ local get_signal_id = function(name)
     return signal_cache[name]
   end
 
-  local items = game.item_prototypes
+  local items = prototypes.item
   if items[name] then
     local value = {type = "item", name = name}
     signal_cache[name] = value
     return value
   end
 
-  local fluids = game.fluid_prototypes
+  local fluids = prototypes.fluid
   if fluids[name] then
     local value = {type = "fluid", name = name}
     signal_cache[name] = value
@@ -116,52 +115,60 @@ local get_signal_id = function(name)
 
 end
 
+-- network.item_supply and depot.old_contents are indexed [quality][name] = ... ; GUI element
+-- names have to be flat unique strings, so (quality, name) pairs get joined with "/" (the same
+-- separator already used to encode sprite paths elsewhere in this file). Item/fluid/quality
+-- prototype names never contain "/", so this can't collide.
+local quality_item_key = function(quality, name)
+  return quality.."/"..name
+end
+
 local floor = math.floor
 local update_contents_table = function(contents_table, network, filter, sort)
 
-  local supply = network.item_supply
-
-  if sort then
-    local sorted_supply = {}
-    local k = 1
-    for name, counts in pairs(supply) do
+  local entries = {}
+  local k = 1
+  for quality, by_name in pairs (network.item_supply) do
+    for name, counts in pairs (by_name) do
       local sum = 0
       for depot_id, count in pairs (counts) do
         sum = sum + count
       end
-      sorted_supply[k] = {name, sum, counts}
+      entries[k] = {quality, name, sum}
       k = k + 1
-    end
-    table.sort(sorted_supply, function(a, b) return a[2] > b[2] end)
-    supply  = {}
-    for k = 1, #sorted_supply do
-      local entry = sorted_supply[k]
-      supply[entry[1]] = entry[3]
     end
   end
 
+  if sort then
+    table.sort(entries, function(a, b) return a[3] > b[3] end)
+  end
 
-  for name, counts in pairs (supply) do
+  local seen = {}
+  for i = 1, #entries do
+    local quality, name, sum = entries[i][1], entries[i][2], entries[i][3]
     local item_locale = get_item_icon_and_locale(name)
 
     if item_locale then
-      local visible = (not filter or filter.name == name)
-      local flow = contents_table[name]
-      if visible then
-        local sum = 0
-        for depot_id, count in pairs (counts) do
-          sum = sum + count
-        end
+      local key = quality_item_key(quality, name)
+      local visible = (not filter) or (filter.name == name and (filter.quality or util.normal_quality) == quality)
+      local flow = contents_table[key]
+      sum = floor(sum)
 
-        sum = floor(sum)
-
-        if sum > 0 then
+      -- An item the network has run out of leaves an empty-but-still-present entry behind in
+      -- item_supply (set_network_supply only clears the per-depot count, not the name it hung
+      -- off), so it keeps showing up here with a sum of 0. Deliberately don't mark those seen -
+      -- the cleanup loop below then drops the row, instead of leaving it on screen forever still
+      -- displaying the last count it had.
+      if sum > 0 then
+        seen[key] = true
+        if visible then
           if not flow then
-            flow = contents_table.add{type = "flow", name = name}
+            flow = contents_table.add{type = "flow", name = key}
             flow.add
             {
               type = "sprite-button",
               sprite = item_locale.icon,
+              quality = quality,
               number = sum,
               style = "transparent_slot",
               name = "count",
@@ -175,12 +182,12 @@ local update_contents_table = function(contents_table, network, filter, sort)
             flow.count.tooltip = sum
           end
         end
+        if flow then flow.visible = visible end
       end
-      if flow then flow.visible = visible end
     end
   end
   for k, gui in pairs (contents_table.children) do
-    if not network.item_supply[gui.name] then gui.destroy() end
+    if not seen[gui.name] then gui.destroy() end
   end
 end
 
@@ -210,18 +217,22 @@ end
 
 local update_contents = function(gui, contents)
 
-  for name, count in pairs (contents) do
+  local seen = {}
+  util.for_each_quality_item(contents, function(quality, name, count)
     local item_locale = get_item_icon_and_locale(name)
     if item_locale then
-      local button = gui[name]
+      local key = quality_item_key(quality, name)
+      seen[key] = true
+      local button = gui[key]
       if not button then
         button = gui.add
         {
           type = "sprite-button",
           sprite = item_locale.icon,
+          quality = quality,
           number = count,
           style = "transparent_slot",
-          name = name,
+          name = key,
           tooltip = count
         }
       else
@@ -229,10 +240,10 @@ local update_contents = function(gui, contents)
         button.tooltip = count
       end
     end
-  end
+  end)
 
   for k, element in pairs (gui.children) do
-    if not contents[element.name] then
+    if not seen[element.name] then
       element.destroy()
     end
   end
@@ -247,7 +258,6 @@ local add_depot_map_button = function(depot, gui, size)
   button.style.horizontal_align = "center"
   button.style.vertical_align = "center"
   button.style.padding = {0,0,0,0}
-  --button.style.horizontally_stretchable = true
   local entity = depot.entity
   local map = button.add
   {
@@ -260,13 +270,6 @@ local add_depot_map_button = function(depot, gui, size)
   }
   map.style.minimal_width = size
   map.style.minimal_height = size
-  --map.style.horizontally_stretchable = true
-  --local sprite_size = 32
-  --local sprite = map.add{type = "sprite", sprite = "entity/"..depot.entity.name}
-  --local padding = (size / 2) - (sprite_size / 2)
-  --sprite.style.padding = {padding, padding, padding, padding}
-  --sprite.style.width = sprite_size
-  --sprite.style.height = sprite_size
 
 end
 
@@ -277,7 +280,7 @@ local update_supply_depot_gui = function(depot, gui, filter)
   if not holding_table then
     holding_table = gui.add{type = "table", column_count = 5, name = "table"}
   end
-  local visible = (not filter) or depot.old_contents[filter.name]
+  local visible = (not filter) or util.get_quality_item(depot.old_contents, filter.quality or util.normal_quality, filter.name)
   if visible then
     update_contents(holding_table, depot.old_contents)
   end
@@ -291,12 +294,10 @@ local update_supply_tab = function(depots, gui, filter)
 
   for index, depot in pairs (depots) do
     if depot.entity.valid then
-      --local depot_frame = depot_table.add{type = "frame", style = "bordered_frame"}
       local depot_frame = gui[index]
       if not depot_frame then
         depot_frame = gui.add{type = "flow", name = index, direction = "vertical"}
         depot_frame.style.horizontally_stretchable = true
-        --depot_frame.style.vertically_stretchable = true
         depot_frame.style.vertical_align = "top"
         add_depot_map_button(depot, depot_frame, map_size)
       end
@@ -398,7 +399,6 @@ end
 
 local update_fuel_depot_gui = function(depot, gui)
 
-  --local depot_frame = depot_table.add{type = "frame", style = "bordered_frame"}
   local flow = gui.table
 
   if not flow then
@@ -492,7 +492,7 @@ local update_request_depot_gui = function(depot, gui, filter)
   end
 
   local item = depot.item
-  local visible = (not filter) or filter.name == item
+  local visible = (not filter) or (filter.name == item and (filter.quality or util.normal_quality) == depot.quality)
   gui.visible = visible
 
   if not visible then return end
@@ -526,6 +526,7 @@ local update_request_depot_gui = function(depot, gui, filter)
         {
           type = "sprite-button",
           sprite = item_locale.icon,
+          quality = depot.quality,
           number = current_count,
           tooltip = current_count,
           style = "transparent_slot",
@@ -550,7 +551,8 @@ local update_request_depot_gui = function(depot, gui, filter)
         {
           type = "sprite-button",
           sprite = item_locale.icon,
-          number = current_count,
+          quality = depot.quality,
+          number = requested_count,
           tooltip = requested_count,
           style = "transparent_slot",
           name = "count"
@@ -691,7 +693,7 @@ local refresh_network_gui = function(player, selected_index)
 
   if not network then return end
 
-  local inner = frame.add{type = "frame", style = "inside_deep_frame_for_tabs", name = "inner_frame", direction = "vertical"}
+  local inner = frame.add{type = "frame", style = "inside_deep_frame", name = "inner_frame", direction = "vertical"}
   local subheader = inner.add{type = "flow", name = "subheader_frame"}
   subheader.style.vertical_align = "center"
   local pusher = subheader.add{type = "empty-widget"}
@@ -722,6 +724,7 @@ local refresh_gui = function(player, force)
   local network = get_selected_network(player)
   if not network then
     close_gui(player)
+    return
   end
 
   refresh_contents_tab(player, force)
@@ -764,7 +767,7 @@ local open_gui = function(player, network_index)
 
   local drop_down = title_flow.add{type = "drop-down", name = "road_network_drop_down"}
 
-  title_flow.add{type = "sprite-button", style = "frame_action_button", sprite = "utility/close_white", name = "close_road_network_gui"}
+  title_flow.add{type = "sprite-button", style = "frame_action_button", sprite = "utility/close", name = "close_road_network_gui"}
 
 
   local selected
@@ -830,7 +833,8 @@ local on_gui_click = function(event)
     local sprite = gui.sprite
     if sprite and sprite ~= "" then
       local result = split(sprite)
-      local signal = {type = result[1], name = result[2]}
+      local quality = gui.quality
+      local signal = {type = result[1], name = result[2], quality = quality and quality.name}
       set_filter_value(player, signal)
       refresh_gui(player, true)
       return
@@ -925,7 +929,7 @@ local on_lua_shortcut = function(event)
   toggle_gui(event)
 end
 
-commands.add_command("toggle-transport-depot-gui", "idk",
+commands.add_command("toggle-transport-depot-gui", {"controls.toggle-road-network-gui"},
 function(command)
   local player = game.player
   if not player then return end
@@ -933,6 +937,10 @@ function(command)
 end)
 
 local lib = {}
+
+-- Exposed for script/self_test.lua, which can't simulate a real player click/hotkey press.
+lib.open_gui = open_gui
+lib.close_gui = close_gui
 
 lib.events =
 {

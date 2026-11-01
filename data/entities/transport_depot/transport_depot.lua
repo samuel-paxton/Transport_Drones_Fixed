@@ -1,3 +1,6 @@
+local assembler_pictures = require("__base__.prototypes.entity.assembler-pictures")
+local assembler3pipepictures = assembler_pictures.assembler3pipepictures
+
 local collision_box = {{-1.25, -1.25},{1.25, 1.25}}
 local selection_box = {{-1.5, -1.5}, {1.5, 1.5}}
 
@@ -12,6 +15,16 @@ local category =
 data:extend{category}
 
 local depot = util.copy(data.raw["assembling-machine"]["assembling-machine-3"])
+
+-- AssemblingMachinePrototype (and furnace, which fluid-depot below becomes) has no "animation"
+-- property at all as of 2.0+ - graphics live under graphics_set.animation (an Animation4Way)
+-- instead. Setting .animation directly is just silently ignored by the prototype loader, and
+-- clearing the inherited vanilla graphics_set with nothing replacing it leaves the entity fully
+-- invisible. This helper sets up graphics_set with our custom animation in the one shape that's
+-- actually read.
+local set_depot_animation = function(prototype, animation_4_way)
+  prototype.graphics_set = {animation = animation_4_way}
+end
 
 local caution_sprite =
 {
@@ -59,28 +72,29 @@ depot.fluid_boxes =
 {
   {
     production_type = "input",
-    base_area = 50,
-    base_level = -1,
-    pipe_connections = {{ type="input", position = {0, -2} }},
+    volume = 5000,
+    -- Position is relative to the entity center and must lie inside collision_box (2.0+
+    -- requirement); {0, -1} sits right at the north edge of the 1.25-tile-radius box above,
+    -- matching where request-depot-base.png actually draws the socket.
+    pipe_connections = {{ flow_direction="input", direction = defines.direction.north, position = {0, -1} }},
   },
   {
     production_type = "output",
-    base_area = 100000,
-    base_level = 1,
-    pipe_connections = {{ type="output", position = {0, 2} }},
+    volume = 10000000,
+    pipe_connections = {{ flow_direction="output", direction = defines.direction.south, position = {0, 1} }},
     pipe_covers = pipecoverspictures(),
-    pipe_picture = assembler3pipepictures(),
+    pipe_picture = assembler3pipepictures,
     secondary_draw_orders = { north = -1, east = -1, west = -1}
   },
-  off_when_no_fluid_recipe = false
 }
+depot.fluid_boxes_off_when_no_fluid_recipe = false
 depot.crafting_categories = {"transport-drone-request"}
 depot.crafting_speed = (1)
 depot.ingredient_count = nil
---depot.collision_mask = {"item-layer", "object-layer", "water-tile", "player-layer", "resource-layer"}
 depot.se_allow_in_space = true
 depot.allowed_effects = {}
 depot.module_specification = nil
+depot.module_slots = 0
 depot.minable = {result = "request-depot", mining_time = 1}
 depot.flags = {"placeable-neutral", "player-creation"}
 depot.next_upgrade = nil
@@ -95,7 +109,7 @@ depot.energy_source =
 }
 depot.placeable_by = {item = "request-depot", count = 1}
 
-depot.animation =
+set_depot_animation(depot,
 {
   north =
   {
@@ -125,28 +139,14 @@ depot.animation =
       request_base{0, 0.4},
     }
   },
-}
+})
 
-local supply_depot = util.copy(depot)
-supply_depot.name = "supply-depot"
-supply_depot.localised_name = {"supply-depot"}
-supply_depot.icon = util.path("data/entities/transport_depot/supply-depot-icon.png")
-supply_depot.minable = {result = "supply-depot", mining_time = 1}
-supply_depot.placeable_by = {item = "supply-depot", count = 1}
-table.insert(supply_depot.flags, "not-deconstructable")
-
-supply_depot.fluid_boxes =
-{
-  {
-    production_type = "input",
-    base_area = 50,
-    base_level = -1,
-    pipe_connections = {{ type="input", position = {0, -2} }},
-  },
-  off_when_no_fluid_recipe = false
-}
-
-
+-- Supply depot used to be two overlapping entities - an inert assembling-machine placeholder
+-- (for the custom visuals + circuit connector, since containers couldn't have either in 1.1) and
+-- a "supply-depot-chest" container underneath it doing the actual item storage. ContainerPrototype
+-- now supports direction_count/picture/circuit_connector directly, so it can just be one real
+-- container - simpler, blueprintable on its own, and no more selection-priority juggling to make
+-- sure clicks/wires land on the right one of the pair.
 local supply_base = function(shift)
   return
   {
@@ -159,36 +159,49 @@ local supply_base = function(shift)
   }
 end
 
-supply_depot.animation =
+local supply_depot =
 {
-  north =
+  type = "container",
+  name = "supply-depot",
+  localised_name = {"supply-depot"},
+  icon = util.path("data/entities/transport_depot/supply-depot-icon.png"),
+  icon_size = 216,
+  dying_explosion = depot.dying_explosion,
+  damaged_trigger_effect = depot.damaged_trigger_effect,
+  corpse = depot.corpse,
+  -- No "not-deconstructable" here: that flag belonged to the old invisible chest half of the
+  -- two-entity design (the assembler on top was the deconstructable one). Now that the container
+  -- IS the depot, the flag would make it immune to deconstruction planners entirely.
+  flags = {"placeable-neutral", "player-creation"},
+  max_health = 150,
+  collision_box = collision_box,
+  selection_box = selection_box,
+  -- Not "container" - a 3x3 depot has no business fast-replacing with 1x1 chests, and script
+  -- state has to go through the normal build/remove events anyway.
+  fast_replaceable_group = nil,
+  scale_info_icons = false,
+  inventory_size = 100,
+  open_sound = { filename = "__base__/sound/metallic-chest-open.ogg", volume = 0.5 },
+  close_sound = { filename = "__base__/sound/metallic-chest-close.ogg", volume = 0.5 },
+  -- direction_count = 1 entities appear to normalize .direction to north regardless of what's
+  -- placed with, which silently broke corpse-offset placement (corpse ended up on the wrong side
+  -- of the depot, disconnected from the intended road node). Use 4 so direction is respected like
+  -- the old assembler-based version did, even though the picture itself is the same in every
+  -- direction (matching the old animation, which never actually varied by direction either).
+  direction_count = 4,
+  picture = {layers = {supply_base{0, 0.4}}},
+  minable = {result = "supply-depot", mining_time = 1},
+  placeable_by = {item = "supply-depot", count = 1},
+  circuit_wire_max_distance = 10,
+  -- Needs one entry per direction_count (4) - "assembling-machine" is a same-offset-times-4
+  -- vector, which is exactly what a direction-invariant container needs here.
+  circuit_connector = circuit_connector_definitions["assembling-machine"],
+  radius_visualisation_specification =
   {
-    layers =
-    {
-      supply_base{0, 0.4},
-    }
-  },
-  south =
-  {
-    layers =
-    {
-      supply_base{0, 0.4},
-    }
-  },
-  east =
-  {
-    layers =
-    {
-      supply_base{0, 0.4},
-    }
-  },
-  west =
-  {
-    layers =
-    {
-      supply_base{0, 0.4},
-    }
-  },
+    sprite = caution_sprite,
+    distance = 0.5,
+    offset = {0, -2}
+  }
 }
 
 local caution_corpse =
@@ -199,44 +212,6 @@ local caution_corpse =
   animation = caution_sprite,
   remove_on_entity_placement = false,
   remove_on_tile_placement = false
-}
-
-local supply_depot_chest =
-{
-  type = "container",
-  name = "supply-depot-chest",
-  localised_name = {"supply-depot"},
-  icon = util.path("data/entities/transport_depot/supply-depot-icon.png"),
-  icon_size = 216,
-  dying_explosion = depot.dying_explosion,
-  damaged_trigger_effect = depot.damaged_trigger_effect,
-  corpse = depot.corpse,
-  flags = {"placeable-neutral", "player-creation", "not-blueprintable"},
-  max_health = 150,
-  collision_box = collision_box,
-  collision_mask = {},
-  selection_priority = 100,
-  fast_replaceable_group = "container",
-  scale_info_icons = false,
-  selection_box = selection_box,
-  inventory_size = 100,
-  open_sound = { filename = "__base__/sound/metallic-chest-open.ogg", volume=0.5 },
-  close_sound = { filename = "__base__/sound/metallic-chest-close.ogg", volume = 0.5 },
-  picture =
-  {
-    layers =
-    {
-      supply_base{0,0}
-    }
-  },
-  picture = util.empty_sprite(),
-  order = "nil",
-  minable = {result = "supply-depot", mining_time = 1},
-  placeable_by = {item = "supply-depot", count = 1},
-  circuit_wire_max_distance = 10,
-  circuit_wire_connection_point = circuit_connector_definitions["roboport"].points,
-  circuit_connector_sprites = circuit_connector_definitions["roboport"].sprites,
-
 }
 
 local category =
@@ -251,8 +226,8 @@ local items =
     type = "item",
     name = "supply-depot",
     localised_name = {"supply-depot"},
-    icon = supply_depot_chest.icon,
-    icon_size = supply_depot_chest.icon_size,
+    icon = supply_depot.icon,
+    icon_size = supply_depot.icon_size,
     flags = {},
     subgroup = "transport-drones",
     order = "e-a-a",
@@ -263,18 +238,18 @@ local items =
     type = "recipe",
     name = "supply-depot",
     localised_name = {"supply-depot"},
-    icon = supply_depot_chest.icon,
-    icon_size = supply_depot_chest.icon_size,
-    --category = "transport",
+    icon = supply_depot.icon,
+    icon_size = supply_depot.icon_size,
     enabled = false,
+    allow_quality = false,
     ingredients =
     {
-      {"iron-plate", 50},
-      {"iron-gear-wheel", 10},
-      {"iron-stick", 20},
+      {type = "item", name = "iron-plate", amount = 50},
+      {type = "item", name = "iron-gear-wheel", amount = 10},
+      {type = "item", name = "iron-stick", amount = 20},
     },
     energy_required = 5,
-    result = "supply-depot"
+    results = {{type = "item", name = "supply-depot", amount = 1}}
   },
   {
     type = "item",
@@ -294,16 +269,16 @@ local items =
     localised_name = {"request-depot"},
     icon = depot.icon,
     icon_size = depot.icon_size,
-    --category = "transport",
     enabled = false,
+    allow_quality = false,
     ingredients =
     {
-      {"iron-plate", 50},
-      {"iron-gear-wheel", 10},
-      {"iron-stick", 20},
+      {type = "item", name = "iron-plate", amount = 50},
+      {type = "item", name = "iron-gear-wheel", amount = 10},
+      {type = "item", name = "iron-stick", amount = 20},
     },
     energy_required = 5,
-    result = "request-depot"
+    results = {{type = "item", name = "request-depot", amount = 1}}
   }
 }
 
@@ -320,22 +295,19 @@ fuel_depot.fluid_boxes =
 {
   {
     production_type = "output",
-    base_area = 10,
-    base_level = -1,
-    pipe_connections = {{ type="input-output", position = {0, -3} }},
+    volume = 1000,
+    pipe_connections = {{ flow_direction="input-output", direction = defines.direction.north, position = {0, -2} }},
   },
   {
     production_type = "input",
-    base_area = 10,
-    base_level = -1,
-    height = 1,
-    pipe_connections = {{ type="input-output", position = {0, 3} }},
+    volume = 1000,
+    pipe_connections = {{ flow_direction="input-output", direction = defines.direction.south, position = {0, 2} }},
     pipe_covers = pipecoverspictures(),
-    pipe_picture = assembler3pipepictures(),
+    pipe_picture = assembler3pipepictures,
     secondary_draw_orders = { north = -1, east = -1, west = -1}
   },
-  off_when_no_fluid_recipe = false
 }
+fuel_depot.fluid_boxes_off_when_no_fluid_recipe = false
 
 local fuel_base = function(shift)
   return
@@ -349,7 +321,7 @@ local fuel_base = function(shift)
   }
 end
 
-fuel_depot.animation =
+set_depot_animation(fuel_depot,
 {
   north =
   {
@@ -379,7 +351,7 @@ fuel_depot.animation =
       fuel_base(),
     }
   },
-}
+})
 
 local fuel_depot_items =
 {
@@ -401,16 +373,16 @@ local fuel_depot_items =
     localised_name = {"fuel-depot"},
     icon = fuel_depot.icon,
     icon_size = fuel_depot.icon_size,
-    --category = "transport",
     enabled = false,
+    allow_quality = false,
     ingredients =
     {
-      {"steel-plate", 10},
-      {"iron-plate", 20},
-      {"iron-gear-wheel", 5},
+      {type = "item", name = "steel-plate", amount = 10},
+      {type = "item", name = "iron-plate", amount = 20},
+      {type = "item", name = "iron-gear-wheel", amount = 5},
     },
     energy_required = 10,
-    result = "fuel-depot"
+    results = {{type = "item", name = "fuel-depot", amount = 1}}
   }
 }
 
@@ -435,7 +407,7 @@ local fuel_signal =
 fuel_depot.fixed_recipe = "fuel-depots"
 fuel_depot.crafting_categories = {"fuel-depot"}
 fuel_depot.minable.result = "fuel-depot"
-fuel_depot.placeable_by = {item = "fuel-depot", count = 1},
+fuel_depot.placeable_by = {item = "fuel-depot", count = 1}
 
 data:extend(fuel_depot_items)
 data:extend{fuel_signal}
@@ -459,7 +431,7 @@ local fluid_request_category =
 local fluid_supply_depot = util.copy(fuel_depot)
 fluid_supply_depot.localised_name = {"fluid-depot"}
 fluid_supply_depot.icon = util.path("data/entities/transport_depot/fluid-depot-icon.png")
-fluid_supply_depot.icon_size = 144
+fluid_supply_depot.icon_size = 146
 fluid_supply_depot.collision_box = collision_box
 fluid_supply_depot.selection_box = selection_box
 fluid_supply_depot.name = "fluid-depot"
@@ -476,22 +448,19 @@ fluid_supply_depot.fluid_boxes =
 {
   {
     production_type = "output",
-    base_area = 10,
-    base_level = -1,
-    pipe_connections = {{ type="input-output", position = {0, -2} }},
+    volume = 1000,
+    pipe_connections = {{ flow_direction="input-output", direction = defines.direction.north, position = {0, -1} }},
   },
   {
     production_type = "input",
-    base_area = 200,
-    base_level = -1,
-    height = 1,
-    pipe_connections = {{ type="input-output", position = {0, 2} }},
+    volume = 20000,
+    pipe_connections = {{ flow_direction="input-output", direction = defines.direction.south, position = {0, 1} }},
     pipe_covers = pipecoverspictures(),
-    pipe_picture = assembler3pipepictures(),
+    pipe_picture = assembler3pipepictures,
     secondary_draw_orders = { north = -1, east = -1, west = -1}
   },
-  off_when_no_fluid_recipe = false
 }
+fluid_supply_depot.fluid_boxes_off_when_no_fluid_recipe = false
 
 local fluid_base = function(shift)
   return
@@ -505,7 +474,7 @@ local fluid_base = function(shift)
   }
 end
 
-fluid_supply_depot.animation =
+set_depot_animation(fluid_supply_depot,
 {
   north =
   {
@@ -535,7 +504,7 @@ fluid_supply_depot.animation =
       fluid_base(),
     }
   },
-}
+})
 
 data:extend
 {
@@ -563,16 +532,16 @@ local fluid_depot_items =
     localised_name = {"fluid-depot"},
     icon = fluid_supply_depot.icon,
     icon_size = fluid_supply_depot.icon_size,
-    --category = "transport",
     enabled = false,
+    allow_quality = false,
     ingredients =
     {
-      {"iron-plate", 50},
-      {"iron-gear-wheel", 10},
-      {"iron-stick", 20},
+      {type = "item", name = "iron-plate", amount = 50},
+      {type = "item", name = "iron-gear-wheel", amount = 10},
+      {type = "item", name = "iron-stick", amount = 20},
     },
     energy_required = 5,
-    result = "fluid-depot"
+    results = {{type = "item", name = "fluid-depot", amount = 1}}
   }
 }
 
@@ -584,7 +553,6 @@ data:extend
   supply_depot,
   caution_corpse,
   invisble_corpse,
-  supply_depot_chest,
   category,
   fuel_depot
 }
@@ -609,7 +577,7 @@ local buffer_base = function(shift)
   }
 end
 
-buffer_depot.animation =
+set_depot_animation(buffer_depot,
 {
   north =
   {
@@ -639,7 +607,7 @@ buffer_depot.animation =
       buffer_base{0, 0.4},
     }
   }
-}
+})
 
 local buffer_depot_items =
 {
@@ -661,16 +629,16 @@ local buffer_depot_items =
     localised_name = {"buffer-depot"},
     icon = buffer_depot.icon,
     icon_size = buffer_depot.icon_size,
-    --category = "transport",
     enabled = false,
+    allow_quality = false,
     ingredients =
     {
-      {"iron-plate", 50},
-      {"iron-gear-wheel", 10},
-      {"iron-stick", 20},
+      {type = "item", name = "iron-plate", amount = 50},
+      {type = "item", name = "iron-gear-wheel", amount = 10},
+      {type = "item", name = "iron-stick", amount = 20},
     },
     energy_required = 5,
-    result = "buffer-depot"
+    results = {{type = "item", name = "buffer-depot", amount = 1}}
   }
 }
 
@@ -679,7 +647,7 @@ data:extend(buffer_depot_items)
 
 local reader = util.copy(data.raw["constant-combinator"]["constant-combinator"])
 reader.name = "road-network-reader"
-reader.localised_name = "Road network reader"
+reader.localised_name = {"road-network-reader"}
 reader.item_slot_count = 1
 reader.sprites = require(util.path("data/entities/transport_depot_circuits/road-network-reader-sprite"))
 reader.icon = util.path("data/entities/transport_depot_circuits/road-network-reader-icon.png")
@@ -697,6 +665,9 @@ local reader_item =
 {
   type = "item",
   name = "road-network-reader",
+  -- The locale only has a top-level "road-network-reader" key, not an [item-name] entry, so
+  -- without this the item shows as "Unknown key".
+  localised_name = {"road-network-reader"},
   icon = reader.icon,
   icon_size = reader.icon_size,
   stack_size = 20,
@@ -713,13 +684,14 @@ local reader_recipe =
   icon = reader.icon,
   icon_size = reader.icon_size,
   enabled = false,
+  allow_quality = false,
   ingredients =
   {
-    {"copper-cable", 5},
-    {"electronic-circuit", 10},
+    {type = "item", name = "copper-cable", amount = 5},
+    {type = "item", name = "electronic-circuit", amount = 10},
   },
   energy_required = 5,
-  result = "road-network-reader"
+  results = {{type = "item", name = "road-network-reader", amount = 1}}
 }
 
 data:extend

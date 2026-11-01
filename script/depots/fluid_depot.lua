@@ -3,10 +3,10 @@ local fluid_depot = {}
 fluid_depot.metatable = {__index = fluid_depot}
 fluid_depot.corpse_offsets =
 {
-  [0] = {0, -2},
-  [2] = {2, 0},
-  [4] = {0, 2},
-  [6] = {-2, 0},
+  [defines.direction.north] = {0, -2},
+  [defines.direction.east] = {2, 0},
+  [defines.direction.south] = {0, 2},
+  [defines.direction.west] = {-2, 0},
 }
 
 local get_corpse_position = function(entity)
@@ -23,7 +23,6 @@ function fluid_depot.new(entity)
   local force = entity.force
   local surface = entity.surface
 
-  --entity.active = false
   entity.rotatable = false
 
   local depot =
@@ -53,12 +52,20 @@ function fluid_depot:get_corpse()
   return corpse
 end
 
+-- Fluids don't have quality, so this always publishes/reads under the "normal" bucket of the
+-- shared (otherwise quality-indexed) network.item_supply table - transport_drone.lua and the
+-- request/buffer depots don't need to know or care that a given supply depot happens to be a
+-- fluid one, they just always pass a quality through uniformly.
 function fluid_depot:get_to_be_taken(name)
-  return self.to_be_taken[name] or 0
+  return util.get_quality_item(self.to_be_taken, util.normal_quality, name) or 0
 end
 
 function fluid_depot:get_output_fluidbox()
-  return self.entity.fluidbox[1]
+  local ok, has_segment = pcall(self.entity.has_fluid_segment, 1)
+  if not (ok and has_segment) then return end
+  local ok2, fluid = pcall(self.entity.get_fluid_segment_fluid, 1)
+  if not ok2 then return end
+  return fluid
 end
 
 function fluid_depot:get_temperature()
@@ -67,73 +74,36 @@ function fluid_depot:get_temperature()
 end
 
 function fluid_depot:set_output_fluidbox(box)
-  self.entity.fluidbox[1] = box
+  util.set_fluid_box_content(self.entity, 1, box)
 end
 
 
 function fluid_depot:update_contents()
 
   local supply = self.road_network.get_network_item_supply(self.network_id)
+  if not supply then return end
 
   local new_contents = {}
 
-
-  local enabled = true
-  if (self.circuit_writer and self.circuit_writer.valid) then
-    local behavior = self.circuit_writer.get_control_behavior()
-    if behavior and behavior.disabled then
-      enabled = false
-    end
+  -- Provider-side depots (supply/mining/fluid) always offer their stock to the network now - see
+  -- supply_depot.lua for why. Only request/buffer depots are circuit-gateable.
+  local box = self:get_output_fluidbox()
+  if box then
+    util.set_quality_item(new_contents, util.normal_quality, box.name, box.amount)
   end
 
-  if enabled then
-    local box = self:get_output_fluidbox()
-    if box then
-      new_contents[box.name] = box.amount
+  util.for_each_quality_item(self.old_contents, function(quality, name, count)
+    if not util.get_quality_item(new_contents, quality, name) then
+      util.set_network_supply(supply, util.normal_quality, name, self.index, nil)
     end
-  end
+  end)
 
-  for name, count in pairs (self.old_contents) do
-    if not new_contents[name] then
-      local item_supply = supply[name]
-      if item_supply then
-        item_supply[self.index] = nil
-      end
-    end
-  end
-
-  for name, count in pairs (new_contents) do
-    local item_supply = supply[name]
-    if not item_supply then
-      item_supply = {}
-      supply[name] = item_supply
-    end
+  util.for_each_quality_item(new_contents, function(quality, name, count)
     local new_count = count - self:get_to_be_taken(name)
-    if new_count > 0 then
-      item_supply[self.index] = new_count
-    else
-      item_supply[self.index] = nil
-    end
-  end
+    util.set_network_supply(supply, util.normal_quality, name, self.index, new_count > 0 and new_count or nil)
+  end)
 
   self.old_contents = new_contents
-
-  if self.circuit_reader and self.circuit_reader.valid then
-    local behavior = self.circuit_reader.get_or_create_control_behavior()
-    local name, count = next(new_contents)
-    if not name then
-      local box = self:get_output_fluidbox()
-      if box then
-        name = box.name
-        count = box.amount
-      end
-    end
-    local signal
-    if name and count and count > 0 then
-      signal = {signal = {type = "fluid", name = name}, count = count}
-    end
-    behavior.set_signal(1, signal)
-  end
 
 end
 
@@ -143,36 +113,36 @@ function fluid_depot:update()
   local box = self:get_output_fluidbox()
   if not box then
     if not self.entity.active then
-      self.entity.active = true
+      self.entity.disabled_by_script = false
       self.entity.crafting_progress = 0
     end
     return
   end
 
   if self.entity.active then
-    self.entity.active = false
+    self.entity.disabled_by_script = true
   end
 
   self:update_contents()
-  --self:say("U")
 
 end
 
 function fluid_depot:say(string)
-  self.entity.surface.create_entity{name = "tutorial-flying-text", position = self.entity.position, text = string}
+  util.say(self.entity, string)
 end
 
-function fluid_depot:give_item(requested_name, requested_count)
-  return self.entity.remove_fluid{name = requested_name, amount = requested_count}
+-- quality is accepted-and-ignored on all three of these: transport_drone.lua and the
+-- request/buffer depots call supply depots generically without knowing whether they're item or
+-- fluid based, and fluids don't have quality (always effectively normal).
+function fluid_depot:give_item(quality, requested_name, requested_count)
+  return self.entity.extract_fluid{name = requested_name, amount = requested_count}
 end
 
-function fluid_depot:add_to_be_taken(name, count)
-  --if not (name and count) then return end
-  self.to_be_taken[name] = (self.to_be_taken[name] or 0) + count
-  --self:say(self.to_be_taken[name])
+function fluid_depot:add_to_be_taken(quality, name, count)
+  util.add_quality_item(self.to_be_taken, util.normal_quality, name, count)
 end
 
-function fluid_depot:get_available_item_count(name)
+function fluid_depot:get_available_item_count(quality, name)
   return self.entity.get_fluid_count(name) - self:get_to_be_taken(name)
 end
 
@@ -187,11 +157,14 @@ function fluid_depot:remove_from_network()
 end
 
 function fluid_depot:on_removed()
-  self.corpse.destroy()
+  if self.corpse and self.corpse.valid then
+    self.corpse.destroy()
+  end
 end
 
 function fluid_depot:on_config_changed()
-  self.old_contents = self.old_contents or {}
+  self.to_be_taken = {}
+  self.old_contents = {}
 end
 
 return fluid_depot

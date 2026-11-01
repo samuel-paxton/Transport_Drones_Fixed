@@ -7,10 +7,10 @@ fuel_depot.metatable = {__index = fuel_depot}
 
 fuel_depot.corpse_offsets =
 {
-  [0] = {0, -3},
-  [2] = {3, 0},
-  [4] = {0, 3},
-  [6] = {-3, 0},
+  [defines.direction.north] = {0, -3},
+  [defines.direction.east] = {3, 0},
+  [defines.direction.south] = {0, 3},
+  [defines.direction.west] = {-3, 0},
 }
 
 local fuel_fluid
@@ -18,7 +18,7 @@ local get_fuel_fluid = function()
   if fuel_fluid then
     return fuel_fluid
   end
-  fuel_fluid = game.recipe_prototypes["fuel-depots"].products[1].name
+  fuel_fluid = prototypes.recipe["fuel-depots"].products[1].name
   return fuel_fluid
 end
 
@@ -36,7 +36,7 @@ function fuel_depot.new(entity, tags)
   local force = entity.force
   local surface = entity.surface
 
-  entity.active = false
+  entity.disabled_by_script = true
   entity.rotatable = false
 
   local depot =
@@ -80,7 +80,7 @@ function fuel_depot:read_tags(tags)
           position = self.entity.position,
           force = self.entity.force,
           target = self.entity,
-          modules = {["transport-drone"] = drone_count}
+          modules = util.drone_item_request_modules(drone_count)
         }
       end
     end
@@ -96,19 +96,9 @@ function fuel_depot:save_to_blueprint_tags()
   }
 end
 
-function fuel_depot:update_circuit_reader()
-  if self.circuit_reader and self.circuit_reader.valid then
-    local behavior = self.circuit_reader.get_or_create_control_behavior()
-    local signal = {signal = {type = "fluid", name = get_fuel_fluid()}, count = self:get_fuel_amount()}
-    behavior.set_signal(1, signal)
-  end
-end
-
 function fuel_depot:update()
   self:check_drone_validity()
-  self:update_circuit_reader()
   self:update_sticker()
-  --game.print("AHOY!")
 end
 
 function fuel_depot:add_to_network()
@@ -129,13 +119,13 @@ function fuel_depot:minimum_request_size()
 end
 
 function fuel_depot:get_drone_inventory()
-  return self.entity.get_inventory(defines.inventory.assembling_machine_input)
+  return self.entity.get_inventory(defines.inventory.crafter_input)
 end
 
 function fuel_depot:remove_drone(drone, remove_item)
   self.drones[drone.index] = nil
   if remove_item then
-    self:get_drone_inventory().remove{name = "transport-drone", count = 1}
+    self:get_drone_inventory().remove{name = "transport-drone", count = 1, quality = util.normal_quality}
   end
   self:update_sticker()
 end
@@ -162,11 +152,9 @@ end
 function fuel_depot:handle_fuel_request(depot)
   if not self:can_spawn_drone() then return end
 
-  if (self.circuit_writer and self.circuit_writer.valid) then
-    local behavior = self.circuit_writer.get_control_behavior()
-    if behavior and behavior.disabled then
-      return
-    end
+  local behavior = self.entity.get_control_behavior()
+  if behavior and behavior.disabled then
+    return
   end
 
   local amount = self:get_fuel_amount()
@@ -174,7 +162,7 @@ function fuel_depot:handle_fuel_request(depot)
 
   amount = math.min((amount - fuel_amount_per_drone), self:get_drone_fluid_capacity())
 
-  local drone = fuel_depot.transport_drone.new(self, "fuel-truck")
+  local drone = fuel_depot.transport_drone.new(self)
   if not drone then return end
 
   self:remove_fuel(amount)
@@ -190,12 +178,12 @@ function fuel_depot:handle_fuel_request(depot)
 end
 
 function fuel_depot:say(string)
-  self.entity.surface.create_entity{name = "tutorial-flying-text", position = self.entity.position, text = string}
+  util.say(self.entity, string)
 end
 
 
 function fuel_depot:get_drone_item_count()
-  return self:get_drone_inventory().get_item_count("transport-drone")
+  return self:get_drone_inventory().get_item_count{name = "transport-drone", quality = util.normal_quality}
 end
 
 function fuel_depot:get_active_drone_count()
@@ -204,8 +192,8 @@ end
 
 function fuel_depot:update_sticker()
 
-  if self.rendering and rendering.is_valid(self.rendering) then
-    rendering.set_text(self.rendering, self:get_active_drone_count().."/"..self:get_drone_item_count())
+  if self.rendering and self.rendering.valid then
+    self.rendering.text = self:get_active_drone_count().."/"..self:get_drone_item_count()
     return
   end
 
@@ -225,11 +213,13 @@ function fuel_depot:update_sticker()
 end
 
 function fuel_depot:remove_fuel(amount)
-  self.entity.remove_fluid({name = get_fuel_fluid(), amount = amount})
+  self.entity.extract_fluid({name = get_fuel_fluid(), amount = amount})
 end
 
 function fuel_depot:on_removed()
-  self.corpse.destroy()
+  if self.corpse and self.corpse.valid then
+    self.corpse.destroy()
+  end
 end
 
 return fuel_depot

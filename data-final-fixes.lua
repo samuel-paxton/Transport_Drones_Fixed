@@ -1,7 +1,7 @@
 local shared = require("shared")
 local collision_mask_util = require("collision-mask-util")
 
-local road_collision_layer = collision_mask_util.get_first_unused_layer()
+local road_collision_layer = "transport_drone_road"
 local tiles = data.raw.tile
 
 
@@ -10,25 +10,32 @@ local road_tile_list =
 {
   type = "selection-tool",
   name = "road-tile-list",
-  flags = {"hidden"},
+  hidden = true,
   icon = "__Transport_Drones__/data/tf_util/empty-sprite.png",
   icon_size = 1,
-  tile_filters = road_list,
   stack_size = 1,
-  selection_color = {},
-  alt_selection_color = {},
-  selection_mode = {"any-tile"},
-  alt_selection_mode = {"any-tile"},
-  selection_cursor_box_type = "entity",
-  alt_selection_cursor_box_type = "entity"
+  select =
+  {
+    border_color = {},
+    mode = {"any-tile"},
+    cursor_box_type = "entity",
+    tile_filters = road_list,
+  },
+  alt_select =
+  {
+    border_color = {},
+    mode = {"any-tile"},
+    cursor_box_type = "entity",
+    tile_filters = road_list,
+  }
 }
 data:extend{road_tile_list}
 
-local place_as_tile_condition = {"water-tile"}
+local place_as_tile_condition = {layers = {water_tile = true}}
 
 if mods["space-exploration"] then
-  table.insert(place_as_tile_condition, spaceship_collision_layer)
-  table.insert(place_as_tile_condition, empty_space_collision_layer)
+  if spaceship_collision_layer then place_as_tile_condition.layers[spaceship_collision_layer] = true end
+  if empty_space_collision_layer then place_as_tile_condition.layers[empty_space_collision_layer] = true end
 end
 
 local process_road_item = function(item)
@@ -37,7 +44,7 @@ local process_road_item = function(item)
   if not tile then return end
   local seen = {}
   while true do
-    tile.collision_mask = {road_collision_layer}
+    tile.collision_mask = {layers = {[road_collision_layer] = true}}
     table.insert(road_list, tile.name)
     seen[tile.name] = true
     tile = tiles[tile.next_direction or ""]
@@ -50,7 +57,7 @@ end
 
 local process_non_road_item = function(item)
   local condition = item.place_as_tile.condition
-  collision_mask_util.add_layer(condition, road_collision_layer)
+  condition.layers[road_collision_layer] = true
 end
 
 for k, item in pairs (data.raw.item) do
@@ -65,43 +72,36 @@ end
 
 local all_used_tile_collision_masks = {}
 for k, tile in pairs (tiles) do
-  tile.check_collision_with_entities =  true
-  for k, layer in pairs (tile.collision_mask or {}) do
+  tile.check_collision_with_entities = true
+  for layer, bool in pairs ((tile.collision_mask and tile.collision_mask.layers) or {}) do
     all_used_tile_collision_masks[layer] = true
   end
 end
 
-shared.drone_collision_mask = all_used_tile_collision_masks
-shared.drone_collision_mask[road_collision_layer] = nil
-shared.drone_collision_mask["colliding-with-tiles-only"] = true
-shared.drone_collision_mask["consider-tile-transitions"] = true
+all_used_tile_collision_masks[road_collision_layer] = nil
 
-for k, prototype in pairs (collision_mask_util.collect_prototypes_with_layer("player-layer")) do
+shared.drone_collision_mask =
+{
+  layers = all_used_tile_collision_masks,
+  colliding_with_tiles_only = true,
+  consider_tile_transitions = true,
+}
+
+for k, prototype in pairs (collision_mask_util.collect_prototypes_with_layer("player")) do
   if prototype.type ~= "gate" and prototype.type ~= "tile" then
     local mask = collision_mask_util.get_mask(prototype)
-    if collision_mask_util.mask_contains_layer(mask, "item-layer") then
-      collision_mask_util.add_layer(mask, road_collision_layer)
+    if mask.layers["item"] then
+      mask.layers[road_collision_layer] = true
     end
     prototype.collision_mask = mask
   end
 end
 
 if data.raw["assembling-machine"]["mining-depot"] then
-  collision_mask_util.add_layer(data.raw["assembling-machine"]["mining-depot"].collision_mask, road_collision_layer)
+  local mask = collision_mask_util.get_mask(data.raw["assembling-machine"]["mining-depot"])
+  mask.layers[road_collision_layer] = true
+  data.raw["assembling-machine"]["mining-depot"].collision_mask = mask
 end
-
---Disable belts on roads
---[[
-  for k, prototype in pairs (collision_mask_util.collect_prototypes_with_layer("transport-belt-layer")) do
-    local mask = collision_mask_util.get_mask(prototype)
-    collision_mask_util.add_layer(mask, road_collision_layer)
-    prototype.collision_mask = mask
-  end
-]]
-
---error(serpent.block(road_list))
-
---So you don't place any tiles over road.
 
 local util = require "__Transport_Drones__/data/tf_util/tf_util"
 require("data/entities/transport_drone/transport_drone")

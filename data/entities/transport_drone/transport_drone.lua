@@ -31,262 +31,79 @@ local name = "transport-drone"
 
 
 local transport_drone_flags = {"placeable-off-grid", "not-in-kill-statistics"}
+
 local sprite_base = util.copy(data.raw.car.tank)
 
-local empty_truck = function(shift)
-  assert(shift)
-  return
-  {
-    layers =
-    {
-      {
-        filename = util.path("data/entities/transport_drone/trailer_base.png"),
-        frame_count = 1,
-        direction_count = 36,
-        line_length = 10,
-        repeat_count = 1,
-        width = 192,
-        height = 192,
-        shift = shift,
-        scale = 0.5
-      },
-      {
-        filename = util.path("data/entities/transport_drone/trailer_base_shadow.png"),
-        frame_count = 1,
-        direction_count = 36,
-        line_length = 10,
-        repeat_count = 1,
-        width = 192,
-        height = 192,
-        shift = shift,
-        scale = 0.5,
-        draw_as_shadow = true
-      },
-      {
-        filename = util.path("data/entities/transport_drone/player_mask.png"),
-        frame_count = 1,
-        direction_count = 36,
-        line_length = 10,
-        repeat_count = 1,
-        width = 192,
-        height = 192,
-        shift = shift,
-        apply_runtime_tint = true,
-        scale = 0.5
-      }
-    }
-  }
+local tank_graphics = function (tint)
+  local head_scale = 0.25 * (0.5 / 0.33)
+  local head_shift = { 0, -0.35 }
+  local tank_scale = 0.33 * (0.5 / 0.33)
 
+  ---@diagnostic disable-next-line: undefined-global
+  local spidertron = spidertron_torso_graphics_set(head_scale)
+  local tank = util.copy(data.raw.car.tank)
+
+  local layers = {}
+  for _, layer in pairs(tank.animation.layers) do
+    layer.scale = layer.scale * tank_scale
+    if layer.shift then
+      layer.shift = { layer.shift[1] * tank_scale, layer.shift[2] * tank_scale }
+    end
+    layer.frame_count = 2
+    layer.max_advance = nil
+    if tint and not layer.draw_as_shadow then
+      layer.tint = tint
+    end
+    table.insert(layers, layer)
+  end
+  for _, layer in pairs(spidertron.animation.layers) do
+    layer.repeat_count = 2
+    if layer.shift then
+      layer.shift = { layer.shift[1] + head_shift[1], layer.shift[2] + head_shift[2] }
+    end
+    table.insert(layers, layer)
+  end
+  local shadow = spidertron.shadow_animation
+  shadow.repeat_count = 2
+  if shadow.shift then
+    shadow.shift = { shadow.shift[1] + head_shift[1], shadow.shift[2] + head_shift[2] }
+  end
+  shadow.draw_as_shadow = true
+  table.insert(layers, shadow)
+
+  return { layers = layers }
 end
 
-local box_variant = 0
-local full_truck = function(shift)
-  box_variant = box_variant + 1
-  return
-  {
-    layers =
-    {
-      {
-        filename = util.path("data/entities/transport_drone/truck_boxes_variation_"..(box_variant % 5)..".png"),
-        frame_count = 1,
-        direction_count = 36,
-        line_length = 10,
-        repeat_count = 1,
-        width = 192,
-        height = 192,
-        shift = shift,
-        scale = 0.5
-      },
-      {
-        filename = util.path("data/entities/transport_drone/truck_boxes_variation_"..(box_variant % 5).."_shadow.png"),
-        frame_count = 1,
-        direction_count = 36,
-        line_length = 10,
-        repeat_count = 1,
-        width = 192,
-        height = 192,
-        shift = shift,
-        scale = 0.5,
-        draw_as_shadow = true
-      },
-      {
-        filename = util.path("data/entities/transport_drone/player_mask.png"),
-        frame_count = 1,
-        direction_count = 36,
-        line_length = 10,
-        repeat_count = 1,
-        width = 192,
-        height = 192,
-        shift = shift,
-        apply_runtime_tint = true,
-        scale = 0.5
-      }
-    }
-  }
+local drone_steering =
+{
+  move = {radius = 0.5, separation_force = 0.1, separation_factor = 0.5},
+  stay = {radius = 0.5, separation_force = 0.1, separation_factor = 0.5},
+  force_unit_fuzzy_goto_behavior = true
+}
 
-end
+-- There used to be `shared.variation_count` (50) of these, identical apart from a random shift of
+-- up to ~0.33 tiles applied to the body animation, sticker_box, selection_box and light. The point
+-- wasn't 50 different-looking drones - it was to stop drones being drawn exactly on top of each
+-- other when several converge on the same depot. That scatter now comes from the drones physically
+-- stopping at different spots instead (see the arrival radius in transport_drone:go_to_depot), so
+-- one prototype is enough and the body, selection box and cargo overlay all line up honestly with
+-- where the drone actually is.
+--
+-- Deliberately still named "transport-drone-1" rather than plain "transport-drone": the name is
+-- what pollution and kill statistics are recorded against (script/transport_drone.lua references
+-- it by string), so renaming it would orphan the stats history already in players' saves.
+local unit_name = name.."-1"
 
-local ore_variant = 0
-local ore_truck = function(shift, tint)
-  ore_variant = ore_variant + 1
-  return
-  {
-    layers =
-    {
-      {
-        filename = util.path("data/entities/transport_drone/trailer_base.png"),
-        frame_count = 1,
-        direction_count = 36,
-        line_length = 10,
-        repeat_count = 1,
-        width = 192,
-        height = 192,
-        shift = shift,
-        scale = 0.5
-      },
-      {
-        filename = util.path("data/entities/transport_drone/player_mask.png"),
-        frame_count = 1,
-        direction_count = 36,
-        repeat_count = 1,
-        line_length = 10,
-        width = 192,
-        height = 192,
-        shift = shift,
-        apply_runtime_tint = true,
-        scale = 0.5
-      },
-      {
-        filename = util.path("data/entities/transport_drone/ore_mask_variation_"..((ore_variant + math.random(4)) % 5)..".png"),
-        frame_count = 1,
-        direction_count = 36,
-        repeat_count = 1,
-        line_length = 10,
-        width = 192,
-        height = 192,
-        shift = shift,
-        apply_runtime_tint = false,
-        tint = tint,
-        scale = 0.5
-      },
-      {
-        filename = util.path("data/entities/transport_drone/ore_mask_variation_"..((ore_variant) % 5)..".png"),
-        frame_count = 1,
-        direction_count = 36,
-        repeat_count = 1,
-        line_length = 10,
-        width = 192,
-        height = 192,
-        shift = shift,
-        apply_runtime_tint = false,
-        tint = tint,
-        scale = 0.5
-      },
-      {
-        filename = util.path("data/entities/transport_drone/trailer_base_shadow.png"),
-        frame_count = 1,
-        direction_count = 36,
-        line_length = 10,
-        repeat_count = 1,
-        width = 192,
-        height = 192,
-        shift = shift,
-        scale = 0.5,
-        draw_as_shadow = true
-      }
-    }
-  }
+local make_unit = function()
 
-end
+  local selection_box = {{-0.3, -0.3}, {0.3, 0.3}}
 
-local fluid_truck = function(shift, tint)
-
-  return
-  {
-    layers =
-    {
-      {
-        filename = util.path("data/entities/transport_drone/fluid_base.png"),
-        frame_count = 1,
-        direction_count = 36,
-        line_length = 10,
-        repeat_count = 1,
-        width = 192,
-        height = 192,
-        shift = shift,
-        scale = 0.5
-      },
-      {
-        filename = util.path("data/entities/transport_drone/fluid_base_shadow.png"),
-        frame_count = 1,
-        direction_count = 36,
-        line_length = 10,
-        repeat_count = 1,
-        width = 192,
-        height = 192,
-        shift = shift,
-        scale = 0.5,
-        draw_as_shadow = true
-      },
-      {
-        filename = util.path("data/entities/transport_drone/player_mask.png"),
-        frame_count = 1,
-        direction_count = 36,
-        line_length = 10,
-        repeat_count = 1,
-        width = 192,
-        height = 192,
-        shift = shift,
-        apply_runtime_tint = true,
-        scale = 0.5
-      },
-      {
-        filename = util.path("data/entities/transport_drone/fluid_mask.png"),
-        frame_count = 1,
-        direction_count = 36,
-        repeat_count = 1,
-        line_length = 10,
-        width = 192,
-        height = 192,
-        shift = shift,
-        apply_runtime_tint = false,
-        tint = tint,
-        scale = 0.5
-      }
-    }
-  }
-
-end
-
-
-
-
-local make_unit = function(k)
-
-  local shift = {(math.random() - 0.5) / 1.5, (math.random() - 0.5) / 1.5}
-  --local sprite_base = util.copy(sprite_base)
-  --util.recursive_hack_make_hr(sprite_base)
-  --util.recursive_hack_scale(sprite_base, 0.4 + (math.random()/ 20))
-  --util.recursive_hack_shift(sprite_base, shift)
-
-  local selection_box =
-  {
-    {
-      -0.3 + shift[1],
-      -0.3 + shift[2],
-    },
-    {
-      0.3 + shift[1],
-      0.3 + shift[2],
-    }
-  }
-
-  local darkness = 0.3  + math.random() / 5
+  local darkness = 0.4
 
   local unit =
   {
     type = "unit",
-    name = name.."-"..k,
+    name = unit_name,
     localised_name = {name},
     icon = util.path("data/entities/transport_drone/transport-drone-icon.png"),
     icon_size = 112,
@@ -307,21 +124,24 @@ local make_unit = function(k)
       }
     },
     healing_per_tick = 0.1,
-    --minable = {result = name, mining_time = 2},
     collision_box = {{-0.01, -0.01}, {0.01, 0.01}},
     selection_box = selection_box,
-    sticker_box = {shift, shift},
+    -- Zero-sized box at the drone's own position. transport_drone:update_sticker reads
+    -- prototype.sticker_box.left_top as the offset to hang the cargo indicator (and the planned
+    -- tray overlay) off, which used to be how it found this variation's random body shift - with
+    -- one unshifted prototype that's simply {0, 0}, and the overlay sits on the body.
+    sticker_box = {{0, 0}, {0, 0}},
     collision_mask = shared.drone_collision_mask,
     max_pursue_distance = 64,
     min_persue_time = (60 * 15),
-    --sticker_box = {{-0.2, -0.2}, {0.2, 0.2}},
     distraction_cooldown = (15),
     move_while_shooting = true,
     can_open_gates = true,
     ai_settings =
     {
-      do_separation = false
+      do_separation = true
     },
+    steering = drone_steering,
     attack_parameters =
     {
       type = "projectile",
@@ -351,16 +171,15 @@ local make_unit = function(k)
           }
         }
       },
-      animation = full_truck(shift)
+      animation = tank_graphics()
     },
     vision_distance = 40,
     has_belt_immunity = true,
     not_controllable = true,
     movement_speed = 0.15,
     distance_per_frame = 0.15,
-    pollution_to_join_attack = 1000,
-    rotation_speed = 1 / (60 * 1 + (math.random() / 20)),
-    --corpse = name.." Corpse",
+    absorptions_to_join_attack = {pollution = 1000},
+    rotation_speed = 1 / 30,
     dying_explosion = "explosion",
     light =
     {
@@ -368,8 +187,7 @@ local make_unit = function(k)
         minimum_darkness = darkness,
         intensity = 0.4,
         size = 10,
-        color = {r=1.0, g=1.0, b=1.0},
-        shift = shift
+        color = {r=1.0, g=1.0, b=1.0}
       },
       {
         type = "oriented",
@@ -383,7 +201,7 @@ local make_unit = function(k)
           width = 200,
           height = 200
         },
-        shift = {shift[1], shift[2] -3.5},
+        shift = {0, -3.5},
         size = 0.5,
         intensity = 0.6,
         color = {r=1.0, g=1.0, b=1.0}
@@ -392,27 +210,24 @@ local make_unit = function(k)
     vehicle_impact_sound =  { filename = "__base__/sound/car-metal-impact.ogg", volume = 0.65 },
     working_sound =
     {
-      sound = sprite_base.working_sound.sound,
+      sound = sprite_base.working_sound.main_sounds[1].sound,
       max_sounds_per_type = 5,
-      audible_distance_modifier = 0.7
+      audible_distance_modifier = 0.7,
+      volume_multiplier = 0.5
     },
-    --run_animation = empty_truck(shift),
-    run_animation = full_truck(shift),
+    run_animation = tank_graphics(),
     affected_by_tiles = affected_by_tiles,
-    emissions_per_second = shared.drone_pollution_per_second
+    emissions_per_second = {pollution = shared.drone_pollution_per_second}
   }
   data:extend{unit}
 end
 
-for k = 1, shared.variation_count do
-  make_unit(k)
-end
+make_unit()
 
 local slow_sticker =
 {
   type = "sticker",
   name = "drone-slowdown-sticker",
-  --icon = "__base__/graphics/icons/slowdown-sticker.png",
   flags = {},
   animation =
   {
@@ -429,332 +244,6 @@ local slow_sticker =
   target_movement_modifier_to = 1
 }
 
-
-local get_item = function(entity)
-  if entity.minable.result then
-    return entity.minable.result or entity.minable.result[1]
-  end
-
-  if entity.minable.results then
-    for k, result in pairs (entity.minable.results) do
-      local name = result.name or result[1]
-      return name
-    end
-  end
-end
-
-local make_ore_truck = function(resource, item_name)
-
-  local map_color = resource.map_color or {0.5, 0.5, 0.5}
-  local r, g, b = map_color[1] or map_color.r or 0, map_color[2] or map_color.g or 0, map_color[3] or map_color.b or 0
-  r = (r + 0.5) / 1.5
-  g = (g + 0.5) / 1.5
-  b = (b + 0.5) / 1.5
-  local color = {r, g, b, 1}
-
-  for k = 1, shared.special_variation_count do
-    local shift = {(math.random() - 0.5) / 1.5, (math.random() - 0.5) / 1.5}
-
-    local selection_box =
-    {
-      {
-        -0.3 + shift[1],
-        -0.3 + shift[2],
-      },
-      {
-        0.3 + shift[1],
-        0.3 + shift[2],
-      }
-    }
-
-    local darkness = 0.3  + math.random() / 5
-
-    local unit =
-    {
-      type = "unit",
-      name = name.."-"..item_name.."-"..k,
-      localised_name = {name},
-      icon = util.path("data/entities/transport_drone/transport-drone-icon.png"),
-      icon_size = 112,
-      icon_mipmaps = 0,
-      flags = transport_drone_flags,
-      map_color = {b = 0.5, g = 1},
-      enemy_map_color = {r = 1},
-      max_health = 50,
-      radar_range = 1,
-      order="i-d",
-      subgroup = "transport",
-      resistances =
-      {
-        {
-          type = "acid",
-          decrease = 0,
-          percent = 90
-        }
-      },
-      healing_per_tick = 0.1,
-      --minable = {result = name, mining_time = 2},
-      collision_box = {{-0.01, -0.01}, {0.01, 0.01}},
-      selection_box = selection_box,
-      sticker_box = {shift, shift},
-      collision_mask = shared.drone_collision_mask,
-      max_pursue_distance = 64,
-      min_persue_time = (60 * 15),
-      --sticker_box = {{-0.2, -0.2}, {0.2, 0.2}},
-      distraction_cooldown = (15),
-      move_while_shooting = true,
-      can_open_gates = true,
-      ai_settings =
-      {
-        do_separation = false
-      },
-      attack_parameters =
-      {
-        type = "projectile",
-        ammo_category = "bullet",
-        warmup = 0,
-        cooldown = 2 ^ 30,
-        range = 0.5,
-        ammo_type =
-        {
-          category = util.ammo_category("transport-drone"),
-          target_type = "entity",
-          action =
-          {
-            type = "direct",
-            action_delivery =
-            {
-              {
-                type = "instant",
-                target_effects =
-                {
-                  {
-                    type = "damage",
-                    damage = {amount = 10 , type = util.damage_type("physical")}
-                  }
-                }
-              }
-            }
-          }
-        },
-        animation = ore_truck(shift, color)
-      },
-      vision_distance = 40,
-      has_belt_immunity = true,
-      not_controllable = true,
-      movement_speed = 0.15,
-      distance_per_frame = 0.15,
-      pollution_to_join_attack = 1000,
-      rotation_speed = 1 / (60 * 1 + (math.random() / 20)),
-      --corpse = name.." Corpse",
-      dying_explosion = "explosion",
-      light =
-      {
-        {
-          minimum_darkness = darkness,
-          intensity = 0.4,
-          size = 10,
-          color = {r=1.0, g=1.0, b=1.0},
-          shift = shift
-        },
-        {
-          type = "oriented",
-          minimum_darkness = darkness,
-          picture =
-          {
-            filename = "__core__/graphics/light-cone.png",
-            priority = "extra-high",
-            flags = { "light" },
-            scale = 2,
-            width = 200,
-            height = 200
-          },
-          shift = {shift[1], shift[2] -3.5},
-          size = 0.5,
-          intensity = 0.6,
-          color = {r=1.0, g=1.0, b=1.0}
-        }
-      },
-      vehicle_impact_sound =  { filename = "__base__/sound/car-metal-impact.ogg", volume = 0.65 },
-      working_sound =
-      {
-        sound = sprite_base.working_sound.sound,
-        max_sounds_per_type = 5,
-        audible_distance_modifier = 0.7
-      },
-      --run_animation = empty_truck(shift),
-      run_animation = ore_truck(shift, color),
-    affected_by_tiles = affected_by_tiles,
-      emissions_per_second = shared.drone_pollution_per_second
-    }
-    data:extend{unit}
-
-  end
-end
-
-local resources = data.raw.resource
-
-for k, resource in pairs (resources) do
-  local item_name = get_item(resource)
-  if item_name then
-    make_ore_truck(resource, item_name)
-  end
-end
-
-
-local make_fluid_truck = function(fluid)
-
-  local r, g, b = fluid.base_color[1] or fluid.base_color.r or 0, fluid.base_color[2] or fluid.base_color.g or 0, fluid.base_color[3] or fluid.base_color.b or 0
-  r = (r + 0.8) / 2
-  g = (g + 0.8) / 2
-  b = (b + 0.8) / 2
-  local color = {r, g, b, 1}
-
-  for k = 1, shared.special_variation_count do
-    local shift = {(math.random() - 0.5) / 1.5, (math.random() - 0.5) / 1.5}
-
-    local selection_box =
-    {
-      {
-        -0.3 + shift[1],
-        -0.3 + shift[2],
-      },
-      {
-        0.3 + shift[1],
-        0.3 + shift[2],
-      }
-    }
-
-    local darkness = 0.3  + math.random() / 5
-
-    local unit =
-    {
-      type = "unit",
-      name = name.."-"..fluid.name.."-"..k,
-      localised_name = {name},
-      icon = util.path("data/entities/transport_drone/transport-drone-icon.png"),
-      icon_size = 112,
-      icon_mipmaps = 0,
-      flags = transport_drone_flags,
-      map_color = {b = 0.5, g = 1},
-      enemy_map_color = {r = 1},
-      max_health = 50,
-      radar_range = 1,
-      order="i-d",
-      subgroup = "transport",
-      resistances =
-      {
-        {
-          type = "acid",
-          decrease = 0,
-          percent = 90
-        }
-      },
-      healing_per_tick = 0.1,
-      --minable = {result = name, mining_time = 2},
-      collision_box = {{-0.01, -0.01}, {0.01, 0.01}},
-      selection_box = selection_box,
-      sticker_box = {shift, shift},
-      collision_mask = shared.drone_collision_mask,
-      max_pursue_distance = 64,
-      min_persue_time = (60 * 15),
-      --sticker_box = {{-0.2, -0.2}, {0.2, 0.2}},
-      distraction_cooldown = (15),
-      move_while_shooting = true,
-      can_open_gates = true,
-      ai_settings =
-      {
-        do_separation = false
-      },
-      attack_parameters =
-      {
-        type = "projectile",
-        ammo_category = "bullet",
-        warmup = 0,
-        cooldown = 2 ^ 30,
-        range = 0.5,
-        ammo_type =
-        {
-          category = util.ammo_category("transport-drone"),
-          target_type = "entity",
-          action =
-          {
-            type = "direct",
-            action_delivery =
-            {
-              {
-                type = "instant",
-                target_effects =
-                {
-                  {
-                    type = "damage",
-                    damage = {amount = 10 , type = util.damage_type("physical")}
-                  }
-                }
-              }
-            }
-          }
-        },
-        animation = fluid_truck(shift, color)
-      },
-      vision_distance = 40,
-      has_belt_immunity = true,
-      not_controllable = true,
-      movement_speed = 0.15,
-      distance_per_frame = 0.15,
-      pollution_to_join_attack = 1000,
-      rotation_speed = 1 / (60 * 1 + (math.random() / 20)),
-      --corpse = name.." Corpse",
-      dying_explosion = "explosion",
-      light =
-      {
-        {
-          minimum_darkness = darkness,
-          intensity = 0.4,
-          size = 10,
-          color = {r=1.0, g=1.0, b=1.0},
-          shift = shift
-        },
-        {
-          type = "oriented",
-          minimum_darkness = darkness,
-          picture =
-          {
-            filename = "__core__/graphics/light-cone.png",
-            priority = "extra-high",
-            flags = { "light" },
-            scale = 2,
-            width = 200,
-            height = 200
-          },
-          shift = {shift[1], shift[2] -3.5},
-          size = 0.5,
-          intensity = 0.6,
-          color = {r=1.0, g=1.0, b=1.0}
-        }
-      },
-      vehicle_impact_sound =  { filename = "__base__/sound/car-metal-impact.ogg", volume = 0.65 },
-      working_sound =
-      {
-        sound = sprite_base.working_sound.sound,
-        max_sounds_per_type = 5,
-        audible_distance_modifier = 0.7
-      },
-      --run_animation = fluid_truck(shift, {0,0,0, 0.5}),
-      run_animation = fluid_truck(shift, color),
-    affected_by_tiles = affected_by_tiles,
-      emissions_per_second = shared.drone_pollution_per_second
-    }
-    data:extend{unit}
-
-  end
-end
-
-for k, fluid in pairs (data.raw.fluid) do
-  make_fluid_truck(fluid)
-end
-
-
 data:extend
 {
   slow_sticker
@@ -767,159 +256,8 @@ local sprite_switch_hack_proxy =
   picture = util.empty_sprite(),
   flags = {"placeable-off-grid", "not-in-kill-statistics"},
   selectable_in_game = false,
-  collision_mask = {},
+  collision_mask = {layers = {}},
   max_health = 1
 }
-
-local make_fuel_truck = function(fluid)
-
-  local r, g, b = fluid.base_color[1] or fluid.base_color.r, fluid.base_color[2] or fluid.base_color.g, fluid.base_color[3] or fluid.base_color.b
-  r = (r + 0.8) / 2
-  g = (g + 0.8) / 2
-  b = (b + 0.8) / 2
-  local color = {r, g, b, 1}
-
-  for k = 1, shared.special_variation_count do
-    local shift = {(math.random() - 0.5) / 1.5, (math.random() - 0.5) / 1.5}
-
-    local selection_box =
-    {
-      {
-        -0.3 + shift[1],
-        -0.3 + shift[2],
-      },
-      {
-        0.3 + shift[1],
-        0.3 + shift[2],
-      }
-    }
-
-    local darkness = 0.3  + math.random() / 5
-
-    local unit =
-    {
-      type = "unit",
-      name = name.."-fuel-truck-"..k,
-      localised_name = {name},
-      icon = util.path("data/entities/transport_drone/transport-drone-icon.png"),
-      icon_size = 112,
-      icon_mipmaps = 0,
-      flags = transport_drone_flags,
-      map_color = {b = 0.5, g = 1},
-      enemy_map_color = {r = 1},
-      max_health = 50,
-      radar_range = 1,
-      order="i-d",
-      subgroup = "transport",
-      resistances =
-      {
-        {
-          type = "acid",
-          decrease = 0,
-          percent = 90
-        }
-      },
-      healing_per_tick = 0.1,
-      --minable = {result = name, mining_time = 2},
-      collision_box = {{-0.01, -0.01}, {0.01, 0.01}},
-      selection_box = selection_box,
-      sticker_box = {shift, shift},
-      collision_mask = shared.drone_collision_mask,
-      max_pursue_distance = 64,
-      min_persue_time = (60 * 15),
-      --sticker_box = {{-0.2, -0.2}, {0.2, 0.2}},
-      distraction_cooldown = (15),
-      move_while_shooting = true,
-      can_open_gates = true,
-      ai_settings =
-      {
-        do_separation = false
-      },
-      attack_parameters =
-      {
-        type = "projectile",
-        ammo_category = "bullet",
-        warmup = 0,
-        cooldown = 2 ^ 30,
-        range = 0.5,
-        ammo_type =
-        {
-          category = util.ammo_category("transport-drone"),
-          target_type = "entity",
-          action =
-          {
-            type = "direct",
-            action_delivery =
-            {
-              {
-                type = "instant",
-                target_effects =
-                {
-                  {
-                    type = "damage",
-                    damage = {amount = 10 , type = util.damage_type("physical")}
-                  }
-                }
-              }
-            }
-          }
-        },
-        animation = fluid_truck(shift, {0,0,0, 0.5}),
-      },
-      vision_distance = 40,
-      has_belt_immunity = true,
-      not_controllable = true,
-      movement_speed = 0.15,
-      distance_per_frame = 0.15,
-      pollution_to_join_attack = 1000,
-      rotation_speed = 1 / (60 * 1 + (math.random() / 20)),
-      --corpse = name.." Corpse",
-      dying_explosion = "explosion",
-      light =
-      {
-        {
-          minimum_darkness = darkness,
-          intensity = 0.4,
-          size = 10,
-          color = {r=1.0, g=1.0, b=1.0},
-          shift = shift
-        },
-        {
-          type = "oriented",
-          minimum_darkness = darkness,
-          picture =
-          {
-            filename = "__core__/graphics/light-cone.png",
-            priority = "extra-high",
-            flags = { "light" },
-            scale = 2,
-            width = 200,
-            height = 200
-          },
-          shift = {shift[1], shift[2] -3.5},
-          size = 0.5,
-          intensity = 0.6,
-          color = {r=1.0, g=1.0, b=1.0}
-        }
-      },
-      vehicle_impact_sound =  { filename = "__base__/sound/car-metal-impact.ogg", volume = 0.65 },
-      working_sound =
-      {
-        sound = sprite_base.working_sound.sound,
-        max_sounds_per_type = 5,
-        audible_distance_modifier = 0.7
-      },
-      run_animation = fluid_truck(shift, color),
-    affected_by_tiles = affected_by_tiles,
-      emissions_per_second = shared.drone_pollution_per_second
-    }
-    data:extend{unit}
-
-  end
-end
-
-for k = 1, shared.special_variation_count do
-  make_fuel_truck(data.raw.fluid[fuel])
-end
 
 data:extend{sprite_switch_hack_proxy}

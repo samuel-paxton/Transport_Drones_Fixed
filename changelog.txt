@@ -1,4 +1,40 @@
 ---------------------------------------------------------------------------------------------------
+Version: 2.1.4
+Date: 2026-09-27
+  Features:
+    - Added Miniature request and supply depots (1x1), unlocked by the new Miniature transport depots technology. The miniature request depot can only request items.
+  Graphics:
+    - Transport drones now have a spidertron head.
+  Bugfixes:
+    - Warn in game when the drone fuel setting isn't a valid fluid name, instead of silently falling back to petroleum gas.
+---------------------------------------------------------------------------------------------------
+Version: 2.1.3
+Date: 2026-08-18
+  Changes:
+    - Fast road recipe requires road as an ingredient.
+  Bugfixes:
+    - Fix all the request recipes showing in Factoriopedia.
+---------------------------------------------------------------------------------------------------
+Version: 2.1.2
+Date: 2026-08-16
+  Bugfixes:
+    - Fixed a crash when updating the road network GUI with fluid depots.
+---------------------------------------------------------------------------------------------------
+Version: 2.1.1
+Date: 2026-08-14
+  Bugfixes:
+    - Fixed a crash when changing a request or buffer depot's item while its drones were still out on the road.
+---------------------------------------------------------------------------------------------------
+Version: 2.1.0
+Date: 2026-08-12
+  Changes:
+    - Ported to Factorio 2.1 (prototypes, collision masks, fluid boxes, GUI/circuit APIs, defines.direction, etc).
+    - Added Quality support: request/buffer depots can request items at a specific quality (pick it the same way you pick the item, on the depot's recipe selector), and the road network only matches supply/demand of the same quality. Transport drones themselves are always normal quality, regardless of what they're carrying.
+    - Removed the Transport depot writer and Transport depot reader entities - depots can be wired to the circuit network directly now, no separate adapter needed. Turn on 'Read contents' on the depot itself to see what it's holding. The Road network reader is unaffected and still works the same way.
+    - Request and buffer depots can be enabled/disabled with a circuit or logistic condition, wired directly to the depot; set the condition to the requested item with '=' to override its request size instead of just gating it. Supply, mining, and fluid depots always offer their stock to the network now - they can no longer be circuit-disabled, only read.
+    - Supply depot is a single entity now instead of two overlapping ones - fixes the occasional case where clicks or blueprints could catch the wrong one of the pair.
+    - The tips and tricks entries now play live simulations instead of showing screenshots - each one builds a small working road network and lets it run, the same way the base game's tips do.
+---------------------------------------------------------------------------------------------------
 Version: 1.0.16
 Date: 2024-01-07
   Changes:

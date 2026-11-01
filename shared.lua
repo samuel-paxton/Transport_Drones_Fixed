@@ -2,11 +2,10 @@
 
 local data = {}
 
-data.drone_collision_mask = {"poop your pants"}
---data.drone_collision_mask = {"ground-tile", "water-tile", "not-colliding-with-itself", "colliding-with-tiles-only"}
---data.drone_collision_mask = {"ground-tile", "water-tile"}
-data.variation_count = 50
-data.special_variation_count = 10
+data.drone_collision_mask = {layers = {}} -- overwritten in data-final-fixes.lua
+-- variation_count/special_variation_count used to live here: the drone came in 50 near-identical
+-- variations (plus per-cargo "special" families). There's one drone prototype now - see
+-- data/entities/transport_drone/transport_drone.lua.
 data.transport_speed_technology = "transport-drone-speed"
 data.transport_capacity_technology = "transport-drone-capacity"
 data.transport_system_technology = "transport-system"

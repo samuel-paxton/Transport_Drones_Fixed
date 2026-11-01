@@ -87,7 +87,6 @@ recursive_hack_make_hr = function(prototype)
     if type(v) == "table" then
       if is_sprite_def(v) and v.hr_version then
         prototype[k] = v.hr_version
-        --v.scale = v.scale * 0.5
         v.hr_version = nil
       end
       recursive_hack_make_hr(v)
@@ -276,15 +275,15 @@ util.copy = util.table.deepcopy
 util.prototype = require("data/tf_util/prototype_util")
 
 util.flying_unit_collision_mask = function()
-  return {"not-colliding-with-itself", "layer-15"}
+  return {layers = {}, not_colliding_with_itself = true}
 end
 
 util.ground_unit_collision_mask = function()
-  return {"not-colliding-with-itself", "player-layer", "train-layer"}
+  return {layers = {player = true, train = true}, not_colliding_with_itself = true}
 end
 
 util.projectile_collision_mask = function()
-  return {"layer-15", "player-layer", "train-layer"}
+  return {layers = {player = true, train = true}}
 end
 
 util.unit_flags = function()

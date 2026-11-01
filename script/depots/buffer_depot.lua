@@ -8,10 +8,10 @@ buffer_depot.metatable = {__index = buffer_depot}
 
 buffer_depot.corpse_offsets =
 {
-  [0] = {0, -2},
-  [2] = {2, 0},
-  [4] = {0, 2},
-  [6] = {-2, 0},
+  [defines.direction.north] = {0, -2},
+  [defines.direction.east] = {2, 0},
+  [defines.direction.south] = {0, 2},
+  [defines.direction.west] = {-2, 0},
 }
 
 buffer_depot.is_buffer_depot = true
@@ -21,7 +21,7 @@ local get_fuel_fluid = function()
   if fuel_fluid then
     return fuel_fluid
   end
-  fuel_fluid = game.recipe_prototypes["fuel-depots"].products[1].name
+  fuel_fluid = prototypes.recipe["fuel-depots"].products[1].name
   return fuel_fluid
 end
 
@@ -45,7 +45,7 @@ function buffer_depot.new(entity, tags)
   local force = entity.force
   local surface = entity.surface
 
-  entity.active = false
+  entity.disabled_by_script = true
   entity.rotatable = false
 
 
@@ -54,6 +54,7 @@ function buffer_depot.new(entity, tags)
     entity = entity,
     index = tostring(entity.unit_number),
     item = false,
+    quality = util.normal_quality,
     drones = {},
     next_spawn_tick = 0,
     mode = request_mode.item,
@@ -92,7 +93,7 @@ function buffer_depot:read_tags(tags)
           position = self.entity.position,
           force = self.entity.force,
           target = self.entity,
-          modules = {["transport-drone"] = drone_count}
+          modules = util.drone_item_request_modules(drone_count)
         }
       end
     end
@@ -109,7 +110,7 @@ function buffer_depot:save_to_blueprint_tags()
 end
 
 function buffer_depot:remove_fuel(amount)
-  self.entity.remove_fluid({name = get_fuel_fluid(), amount = amount})
+  self.entity.extract_fluid({name = get_fuel_fluid(), amount = amount})
 end
 
 function buffer_depot:check_drone_validity()
@@ -190,71 +191,50 @@ function buffer_depot:check_drone_amount()
 
 end
 
-function buffer_depot:offer_item()
-  if not self.item then return end
-  self:check_requests_for_item(self.item, self:get_current_amount())
-end
-
 function buffer_depot:update_contents()
 
   if not self.network_id then return end
 
   local supply = self.road_network.get_network_item_supply(self.network_id)
+  if not supply then return end
 
   local new_contents = {}
 
   local enabled = (self.circuit_limit ~= 0)
 
   if enabled and self.item then
-    new_contents[self.item] = self:get_current_amount()
+    util.set_quality_item(new_contents, self.quality, self.item, self:get_current_amount())
   end
 
-  for name, count in pairs (self.old_contents) do
-    if not new_contents[name] then
-      local item_supply = supply[name]
-      if item_supply then
-        item_supply[self.index] = nil
-      end
+  util.for_each_quality_item(self.old_contents, function(quality, name, count)
+    if not util.get_quality_item(new_contents, quality, name) then
+      util.set_network_supply(supply, quality, name, self.index, nil)
     end
-  end
+  end)
 
-  for name, count in pairs (new_contents) do
-    local item_supply = supply[name]
-    if not item_supply then
-      item_supply = {}
-      supply[name] = item_supply
-    end
-    local new_count = count - self:get_to_be_taken(name)
-    if new_count > 0 then
-      item_supply[self.index] = new_count
-    else
-      item_supply[self.index] = nil
-    end
-  end
+  util.for_each_quality_item(new_contents, function(quality, name, count)
+    local new_count = count - self:get_to_be_taken(quality, name)
+    util.set_network_supply(supply, quality, name, self.index, new_count > 0 and new_count or nil)
+  end)
 
   self.old_contents = new_contents
-
-  if self.circuit_reader and self.circuit_reader.valid then
-    local behavior = self.circuit_reader.get_or_create_control_behavior()
-    local signal
-    if self.item then
-      signal = {signal = {type = self.mode == request_mode.item and "item" or "fluid", name = self.item}, count = self:get_current_amount()}
-    end
-    behavior.set_signal(1, signal)
-  end
 
 end
 
 local min = math.min
 function buffer_depot:dispatch_drone(depot, count)
 
-  local drone = self.transport_drone.new(self, self.item)
-  drone:pickup_from_supply(depot, self.item, count)
+  local drone = self.transport_drone.new(self)
+  -- See request_depot:dispatch_drone - new() can return nil if the entity couldn't be created.
+  if not drone then return end
+
+  drone:pickup_from_supply(depot, self.quality, self.item, count)
   self:remove_fuel(fuel_amount_per_drone)
 
   self.drones[drone.index] = drone
 
   self:update_sticker()
+  return true
 end
 
 
@@ -275,7 +255,7 @@ function buffer_depot:make_request()
   if not self:can_spawn_drone() then return end
   if not self:should_order() then return end
 
-  local supply_depots = self.road_network.get_supply_depots(self.network_id, name)
+  local supply_depots = self.road_network.get_supply_depots(self.network_id, name, self.quality)
   if not supply_depots then return end
 
   local request_size = self:get_request_size()
@@ -313,11 +293,13 @@ function buffer_depot:make_request()
 
   local count = supply_depots[best_index]
   if request_size >= count then
-    supply_depots[best_index] = nil
-    self:dispatch_drone(best_buffer, count)
+    if self:dispatch_drone(best_buffer, count) then
+      supply_depots[best_index] = nil
+    end
   else
-    supply_depots[best_index] = count - request_size
-    self:dispatch_drone(best_buffer, request_size)
+    if self:dispatch_drone(best_buffer, request_size) then
+      supply_depots[best_index] = count - request_size
+    end
   end
 
 end
@@ -325,34 +307,48 @@ end
 
 function buffer_depot:update()
   self:check_request_change()
+  -- Has to come before update_contents: that's what decides whether this depot offers its stock
+  -- to the network at all (circuit_limit == 0 means disabled), so reading last cycle's value
+  -- there would keep a just-disabled buffer advertising its contents for one more update.
+  self:update_circuit_writer()
   self:update_contents()
   self:check_fuel_amount()
   self:check_drone_validity()
   self:check_drone_amount()
-  self:update_circuit_writer()
   self:make_request()
   self:update_sticker()
 end
 
 function buffer_depot:suicide_all_drones()
   for k, drone in pairs (self.drones) do
-    drone:suicide()
+    -- drone.entity can already be invalid here (check_drone_validity() is the usual place that
+    -- cleans these up, but this can run earlier in the same update() via check_request_change) -
+    -- drone:suicide() assumes a valid entity (it accesses self.entity.surface), so guard the same
+    -- way request_depot:suicide_all_drones() does.
+    if drone.entity.valid then
+      drone:suicide()
+    else
+      drone:clear_drone_data()
+      self:remove_drone(drone)
+    end
   end
 end
 
 function buffer_depot:set_request_mode()
+  self.mode = nil
   local recipe = self.entity.get_recipe()
   if not recipe then return end
 
-  local product_type = recipe.products[1].type
+  local product = util.get_recipe_product(recipe)
+  if not product then return end
+
+  local product_type = product.type
   if product_type == "item" then
-    --self:say("Set to item")
     self.mode = request_mode.item
     return
   end
 
   if product_type == "fluid" then
-    --self:say("Set to fluid")
     self.mode = request_mode.fluid
     return
   end
@@ -360,8 +356,8 @@ end
 
 
 function buffer_depot:check_request_change()
-  local requested_item = self:get_requested_item()
-  if self.item == requested_item then return end
+  local requested_item, requested_quality = self:get_requested_item()
+  if self.item == requested_item and self.quality == requested_quality then return end
 
   self:set_request_mode()
 
@@ -370,20 +366,23 @@ function buffer_depot:check_request_change()
   end
 
   self.item = requested_item
+  self.quality = requested_quality
 
 end
 
 function buffer_depot:get_requested_item()
-  local recipe = self.entity.get_recipe()
+  local recipe, quality = self.entity.get_recipe()
   if not recipe then return end
-  return recipe.products[1].name
+  local product = util.get_recipe_product(recipe)
+  if not product then return end
+  return product.name, (quality and quality.name) or util.normal_quality
 end
 
 local stack_cache = {}
 local get_stack_size = function(item)
   local size = stack_cache[item]
   if not size then
-    size = game.item_prototypes[item].stack_size
+    size = prototypes.item[item].stack_size
     stack_cache[item] = size
   end
   return size
@@ -411,7 +410,7 @@ function buffer_depot:get_output_inventory()
 end
 
 function buffer_depot:get_drone_inventory()
-  return self.entity.get_inventory(defines.inventory.assembling_machine_input)
+  return self.entity.get_inventory(defines.inventory.crafter_input)
 end
 
 function buffer_depot:get_active_drone_count()
@@ -427,22 +426,20 @@ function buffer_depot:can_spawn_drone()
 end
 
 function buffer_depot:get_drone_item_count()
-  return self:get_drone_inventory().get_item_count("transport-drone")
+  return self:get_drone_inventory().get_item_count{name = "transport-drone", quality = util.normal_quality}
 end
 
 function buffer_depot:get_output_fluidbox()
-  return self.entity.fluidbox[2]
+  return util.get_fluid_box_content(self.entity, 2)
 end
 
 function buffer_depot:set_output_fluidbox(box)
-  self.entity.fluidbox[2] = box
+  util.set_fluid_box_content(self.entity, 2, box)
 end
 
 function buffer_depot:get_temperature()
-  if #self.entity.fluidbox == 2 then
-    local box = self:get_output_fluidbox()
-    return box and box.temperature
-  end
+  local box = self:get_output_fluidbox()
+  return box and box.temperature
 end
 
 function buffer_depot:get_current_amount()
@@ -450,7 +447,7 @@ function buffer_depot:get_current_amount()
   if not self.item then return 0 end
 
   if self.mode == request_mode.item then
-    return self:get_output_inventory().get_item_count(self.item)
+    return self:get_output_inventory().get_item_count{name = self.item, quality = self.quality}
   end
 
   if self.mode == request_mode.fluid then
@@ -461,7 +458,7 @@ end
 
 function buffer_depot:get_available_stack_amount()
   if not self.item then return 0 end
-  return self:get_available_item_count(self.item) / self:get_stack_size()
+  return self:get_available_item_count(self.quality, self.item) / self:get_stack_size()
 end
 
 function buffer_depot:get_minimum_request_size()
@@ -501,15 +498,15 @@ function buffer_depot:should_order()
 end
 
 local min = math.min
-function buffer_depot:give_item(requested_name, requested_count)
+function buffer_depot:give_item(quality, requested_name, requested_count)
 
-  if game.item_prototypes[requested_name] then
+  if prototypes.item[requested_name] then
     local inventory = self.entity.get_output_inventory()
-    local removed_count = inventory.remove({name = requested_name, count = requested_count})
+    local removed_count = inventory.remove({name = requested_name, count = requested_count, quality = quality})
     return removed_count
   end
 
-  if game.fluid_prototypes[requested_name] then
+  if prototypes.fluid[requested_name] then
     local box = self:get_output_fluidbox()
     if not box then
       return 0
@@ -536,7 +533,7 @@ local is_valid_item = function(item_name)
   if bool ~= nil then
     return bool
   end
-  valid_item_cache[item_name] = game.item_prototypes[item_name] ~= nil
+  valid_item_cache[item_name] = prototypes.item[item_name] ~= nil
   return valid_item_cache[item_name]
 end
 
@@ -546,15 +543,15 @@ local is_valid_fluid = function(fluid_name)
   if bool ~= nil then
     return bool
   end
-  valid_fluid_cache[fluid_name] = game.fluid_prototypes[fluid_name] ~= nil
+  valid_fluid_cache[fluid_name] = prototypes.fluid[fluid_name] ~= nil
   return valid_fluid_cache[fluid_name]
 end
 
-function buffer_depot:take_item(name, count, temperature)
+function buffer_depot:take_item(quality, name, count, temperature)
   if not count then error("NO COUMT?") end
 
   if self.mode == request_mode.item and is_valid_item(name) then
-    self.entity.get_output_inventory().insert({name = name, count = count})
+    self.entity.get_output_inventory().insert({name = name, count = count, quality = quality})
     return
   end
 
@@ -573,24 +570,22 @@ function buffer_depot:take_item(name, count, temperature)
 
 end
 
-function buffer_depot:get_to_be_taken(name)
-  return self.to_be_taken[name] or 0
+function buffer_depot:get_to_be_taken(quality, name)
+  return util.get_quality_item(self.to_be_taken, quality, name) or 0
 end
 
-function buffer_depot:add_to_be_taken(name, count)
-  --if not (name and count) then return end
-  self.to_be_taken[name] = (self.to_be_taken[name] or 0) + count
-  --self:say(self.to_be_taken[name])
+function buffer_depot:add_to_be_taken(quality, name, count)
+  util.add_quality_item(self.to_be_taken, quality, name, count)
 end
 
-function buffer_depot:get_available_item_count(name)
-  return self:get_current_amount() - self:get_to_be_taken(name)
+function buffer_depot:get_available_item_count(quality, name)
+  return self:get_current_amount() - self:get_to_be_taken(quality, name)
 end
 
 function buffer_depot:remove_drone(drone, remove_item)
   self.drones[drone.index] = nil
   if remove_item then
-    self:get_drone_inventory().remove{name = "transport-drone", count = 1}
+    self:get_drone_inventory().remove{name = "transport-drone", count = 1, quality = util.normal_quality}
   end
   self:update_sticker()
 end
@@ -598,15 +593,15 @@ end
 function buffer_depot:update_sticker()
 
   if not self.item then
-    if self.rendering and rendering.is_valid(self.rendering) then
-      rendering.destroy(self.rendering)
+    if self.rendering and self.rendering.valid then
+      self.rendering.destroy()
       self.rendering = nil
     end
     return
   end
 
-  if self.rendering and rendering.is_valid(self.rendering) then
-    rendering.set_text(self.rendering, self:get_active_drone_count().."/"..self:get_drone_item_count())
+  if self.rendering and self.rendering.valid then
+    self.rendering.text = self:get_active_drone_count().."/"..self:get_drone_item_count()
     return
   end
 
@@ -624,56 +619,51 @@ function buffer_depot:update_sticker()
 
 end
 
+-- See request_depot.lua's update_circuit_writer for the reasoning - same deal here, just wired
+-- directly to this depot's own control behavior instead of a separate writer entity.
 function buffer_depot:update_circuit_writer()
-  if not self.circuit_writer then return end
-
-  if not self.circuit_writer.valid then
-    self.circuit_writer = nil
+  local behavior = self.entity.get_control_behavior()
+  if not behavior then
     self.circuit_limit = nil
     return
   end
 
-  local behavior = self.circuit_writer.get_control_behavior()
-  if not behavior then
-    self.circuit_limit = 0
-    --self:say("Depot disabled")
-    return
+  -- circuit_condition/logistic_condition stay set (and readable) even while their own
+  -- circuit_enable_disable/connect_to_logistic_network toggle is off - only look at it while the
+  -- matching toggle is actually on, or a stale condition could apply as a "phantom" request-size
+  -- override the player never asked for (see request_depot.lua's update_circuit_writer).
+  --
+  -- CircuitConditionDefinition is a flat table (comparator/first_signal/second_signal/constant),
+  -- not nested under its own "condition" key.
+  local condition
+  if behavior.connect_to_logistic_network then
+    condition = behavior.logistic_condition
+  elseif behavior.circuit_enable_disable then
+    condition = behavior.circuit_condition
   end
-
-  local circuit_condition = behavior.connect_to_logistic_network and behavior.logistic_condition or behavior.circuit_condition
-  if circuit_condition then
-    local condition = circuit_condition.condition
+  if condition then
     if condition.comparator == "=" then
       local first_signal = condition.first_signal
-      if first_signal then
-        if first_signal.name == self.item then
-          local count
-          if condition.second_signal and condition.second_signal.name then
-            count = self.circuit_writer.get_merged_signal(condition.second_signal)
-          else
-            count = condition.constant or 0
-          end
-          self.circuit_limit = count
-          --self:say("Set limit "..count)
-          return
+      if first_signal and first_signal.name == self.item and (first_signal.quality or util.normal_quality) == self.quality then
+        local count
+        if condition.second_signal and condition.second_signal.name then
+          -- get_merged_signal was removed - read both wires and add them together instead.
+          count = self.entity.get_signal(condition.second_signal, defines.wire_connector_id.circuit_red, defines.wire_connector_id.circuit_green)
+        else
+          count = condition.constant or 0
         end
+        self.circuit_limit = count
+        return
       end
-    end
-    if circuit_condition.fulfilled then
-      self.circuit_limit = nil
-      --self:say("Depot enabled")
-      return
     end
   end
 
-  --If there is a writer with no conditions, we just disable the depot.
-  self.circuit_limit = 0
-  --self:say("Depot disabled")
+  self.circuit_limit = behavior.disabled and 0 or nil
 
 end
 
 function buffer_depot:say(string)
-  self.entity.surface.create_entity{name = "tutorial-flying-text", position = self.entity.position, text = string}
+  util.say(self.entity, string)
 end
 
 function buffer_depot:add_to_network()
@@ -688,13 +678,24 @@ end
 
 function buffer_depot:on_removed()
   self:suicide_all_drones()
-  self.corpse.destroy()
+  if self.corpse and self.corpse.valid then
+    self.corpse.destroy()
+  end
 end
 
 function buffer_depot:on_config_changed()
   self:set_request_mode()
-  self.to_be_taken = self.to_be_taken or {}
-  self.old_contents = self.old_contents or {}
+  -- See request_depot:on_config_changed - item without a mode is unsizeable, and the GUI can read
+  -- get_request_size() before check_request_change gets a chance to reconcile the two.
+  if not self.mode then
+    self.item = nil
+  end
+  self.quality = self.quality or util.normal_quality
+  -- Reset unconditionally (not "or {}") - contents/to_be_taken used to be flat [name] = count
+  -- tables before quality support; they're now [quality][name] = count. Discarding old data
+  -- here is harmless, it gets rebuilt from scratch on the next update().
+  self.to_be_taken = {}
+  self.old_contents = {}
 end
 
 return buffer_depot

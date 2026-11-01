@@ -6,25 +6,25 @@ request_depot.metatable = {__index = request_depot}
 
 request_depot.corpse_offsets =
 {
-  [0] = {0, -2},
-  [2] = {2, 0},
-  [4] = {0, 2},
-  [6] = {-2, 0},
+  [defines.direction.north] = {0, -2},
+  [defines.direction.east] = {2, 0},
+  [defines.direction.south] = {0, 2},
+  [defines.direction.west] = {-2, 0},
 }
 
 local fuel_fluid
 local get_fuel_fluid = function()
   if not fuel_fluid then
-    fuel_fluid = game.recipe_prototypes["fuel-depots"].products[1].name
+    fuel_fluid = prototypes.recipe["fuel-depots"].products[1].name
   end
   return fuel_fluid
 end
 
-local get_corpse_position = function(entity)
+local get_corpse_position = function(entity, corpse_offsets)
 
   local position = entity.position
   local direction = entity.direction
-  local offset = request_depot.corpse_offsets[direction]
+  local offset = corpse_offsets[direction]
   return {position.x + offset[1], position.y + offset[2]}
 
 end
@@ -35,12 +35,12 @@ local request_mode =
   fluid = 2
 }
 
-function request_depot.new(entity, tags)
+local new_depot = function(lib, entity, tags)
 
   local force = entity.force
   local surface = entity.surface
 
-  entity.active = false
+  entity.disabled_by_script = true
   entity.rotatable = false
 
   local depot =
@@ -48,11 +48,12 @@ function request_depot.new(entity, tags)
     entity = entity,
     index = tostring(entity.unit_number),
     item = false,
+    quality = util.normal_quality,
     drones = {},
     mode = request_mode.item,
     fuel_on_the_way = 0
   }
-  setmetatable(depot, request_depot.metatable)
+  setmetatable(depot, lib.metatable)
 
   depot:get_corpse()
   depot:read_tags(tags)
@@ -61,12 +62,28 @@ function request_depot.new(entity, tags)
 
 end
 
+function request_depot.new(entity, tags)
+  return new_depot(request_depot, entity, tags)
+end
+
+-- A depot sharing all of this behaviour but with a different footprint, so a different road node
+-- offset (the miniature depots). Its depots get the variant's own metatable, so on_load finds the
+-- right corpse_offsets again through the entity name.
+function request_depot.make_variant(corpse_offsets)
+  local variant = setmetatable({corpse_offsets = corpse_offsets}, {__index = request_depot})
+  variant.metatable = {__index = variant}
+  variant.new = function(entity, tags)
+    return new_depot(variant, entity, tags)
+  end
+  return variant
+end
+
 function request_depot:get_corpse()
   if self.corpse and self.corpse.valid then
     return self.corpse
   end
 
-  local corpse_position = get_corpse_position(self.entity)
+  local corpse_position = get_corpse_position(self.entity, self.corpse_offsets)
   local corpse = self.entity.surface.create_entity{name = "transport-caution-corpse", position = corpse_position}
   corpse.corpse_expires = false
   self.corpse = corpse
@@ -85,7 +102,7 @@ function request_depot:read_tags(tags)
           position = self.entity.position,
           force = self.entity.force,
           target = self.entity,
-          modules = {["transport-drone"] = drone_count}
+          modules = util.drone_item_request_modules(drone_count)
         }
       end
     end
@@ -102,7 +119,7 @@ function request_depot:save_to_blueprint_tags()
 end
 
 function request_depot:remove_fuel(amount)
-  self.entity.remove_fluid({name = get_fuel_fluid(), amount = amount})
+  self.entity.extract_fluid({name = get_fuel_fluid(), amount = amount})
 end
 
 function request_depot:check_drone_validity()
@@ -215,7 +232,7 @@ function request_depot:make_request()
 
   if not self:can_spawn_drone() then return end
   if not self:should_order() then return end
-  local supply_depots = self.road_network.get_supply_depots(self.network_id, name)
+  local supply_depots = self.road_network.get_supply_depots(self.network_id, name, self.quality)
   if not supply_depots then return end
 
   local request_size = self:get_request_size()
@@ -257,29 +274,15 @@ function request_depot:make_request()
 
   local count = supply_depots[best_index]
   if request_size >= count then
-    supply_depots[best_index] = nil
-    self:dispatch_drone(best_buffer, count)
+    if self:dispatch_drone(best_buffer, count) then
+      supply_depots[best_index] = nil
+    end
   else
-    supply_depots[best_index] = count - request_size
-    self:dispatch_drone(best_buffer, request_size)
+    if self:dispatch_drone(best_buffer, request_size) then
+      supply_depots[best_index] = count - request_size
+    end
   end
 
-end
-
-function request_depot:update_circuit_reader()
-  if self.circuit_reader and self.circuit_reader.valid then
-    local behavior = self.circuit_reader.get_or_create_control_behavior()
-    local signal
-    if self.item then
-      signal = {signal = {type = self.mode == request_mode.item and "item" or "fluid", name = self.item}, count = self:get_current_amount()}
-    end
-    behavior.set_signal(1, signal)
-    local drone_signal
-    if self.item then
-      drone_signal = {signal = {type = "virtual", name = "signal-D"}, count = self:get_drone_item_count()}
-    end
-    behavior.set_signal(2, drone_signal)
-  end
 end
 
 function request_depot:update()
@@ -290,7 +293,6 @@ function request_depot:update()
   self:update_circuit_writer()
   self:make_request()
   self:update_sticker()
-  self:update_circuit_reader()
 end
 
 function request_depot:suicide_all_drones()
@@ -309,15 +311,16 @@ function request_depot:set_request_mode()
   local recipe = self.entity.get_recipe()
   if not recipe then return end
 
-  local product_type = recipe.products[1].type
+  local product = util.get_recipe_product(recipe)
+  if not product then return end
+
+  local product_type = product.type
   if product_type == "item" then
-    --self:say("Set to item")
     self.mode = request_mode.item
     return
   end
 
   if product_type == "fluid" then
-    --self:say("Set to fluid")
     self.mode = request_mode.fluid
     return
   end
@@ -325,8 +328,8 @@ end
 
 
 function request_depot:check_request_change()
-  local requested_item = self:get_requested_item()
-  if self.item == requested_item then
+  local requested_item, requested_quality = self:get_requested_item()
+  if self.item == requested_item and self.quality == requested_quality then
     return
   end
 
@@ -338,6 +341,7 @@ function request_depot:check_request_change()
   end
 
   self.item = requested_item
+  self.quality = requested_quality
 
   if not self.item then return end
 
@@ -346,16 +350,18 @@ function request_depot:check_request_change()
 end
 
 function request_depot:get_requested_item()
-  local recipe = self.entity.get_recipe()
+  local recipe, quality = self.entity.get_recipe()
   if not recipe then return end
-  return recipe.products[1].name
+  local product = util.get_recipe_product(recipe)
+  if not product then return end
+  return product.name, (quality and quality.name) or util.normal_quality
 end
 
 local stack_cache = {}
 local get_stack_size = function(item)
   local size = stack_cache[item]
   if not size then
-    local prototype = game.item_prototypes[item]
+    local prototype = prototypes.item[item]
     if not prototype then error("what? "..item) end
     size = prototype.stack_size
     stack_cache[item] = size
@@ -381,7 +387,6 @@ function request_depot:get_request_size()
 end
 
 function request_depot:get_output_inventory()
-  --return self.entity.get_output_inventory()
   if not self.output_inventory then
     self.output_inventory = self.entity.get_output_inventory()
   end
@@ -390,10 +395,9 @@ end
 
 function request_depot:get_drone_inventory()
   if not self.drone_inventory then
-    self.drone_inventory = self.entity.get_inventory(defines.inventory.assembling_machine_input)
+    self.drone_inventory = self.entity.get_inventory(defines.inventory.crafter_input)
                     end
   return self.drone_inventory
-  --return self.entity.get_inventory(defines.inventory.assembling_machine_input)
 end
 
 function request_depot:get_active_drone_count()
@@ -409,21 +413,21 @@ function request_depot:can_spawn_drone()
 end
 
 function request_depot:get_drone_item_count()
-  return self:get_drone_inventory().get_item_count("transport-drone")
+  return self:get_drone_inventory().get_item_count{name = "transport-drone", quality = util.normal_quality}
 end
 
 function request_depot:get_output_fluidbox()
-  return self.entity.fluidbox[2]
+  return util.get_fluid_box_content(self.entity, 2)
 end
 
 function request_depot:set_output_fluidbox(box)
-  self.entity.fluidbox[2] = box
+  util.set_fluid_box_content(self.entity, 2, box)
 end
 
 function request_depot:get_current_amount()
 
   if self.mode == request_mode.item then
-    return self:get_output_inventory().get_item_count(self.item)
+    return self:get_output_inventory().get_item_count{name = self.item, quality = self.quality}
   end
 
   if self.mode == request_mode.fluid then
@@ -451,64 +455,71 @@ function request_depot:should_order()
 
 end
 
+-- The depot is wired directly (it's just an assembling machine, no separate writer entity
+-- needed). Normally its circuit condition is a plain enable/disable gate, read straight off
+-- LuaGenericOnOffControlBehavior.disabled - but there's a special case: if the condition compares
+-- the depot's own requested item/quality with '=', its right-hand side is used as a request-size
+-- override instead of a plain gate (see the "request-depots" tip for the player-facing version
+-- of this).
 function request_depot:update_circuit_writer()
-  if not self.circuit_writer then return end
-
-  if not self.circuit_writer.valid then
-    self.circuit_writer = nil
+  local behavior = self.entity.get_control_behavior()
+  if not behavior then
     self.circuit_limit = nil
     return
   end
 
-  local behavior = self.circuit_writer.get_control_behavior()
-  if not behavior then
-    self.circuit_limit = 0
-    --self:say("Depot disabled")
-    return
+  -- circuit_condition/logistic_condition stay set (and readable) even while their own
+  -- circuit_enable_disable/connect_to_logistic_network toggle is off - e.g. a player who set a
+  -- condition, then unchecked the toggle, still has that condition sitting there. Only look at it
+  -- while the matching toggle is actually on, or a stale condition could apply as a "phantom"
+  -- request-size override the player never asked for (confirmed by self_test.lua's unarmed_item
+  -- case - an unwired, untoggled depot with a leftover self-match condition was still being capped).
+  --
+  -- CircuitConditionDefinition is a flat table (comparator/first_signal/second_signal/constant),
+  -- not nested under its own "condition" key.
+  local condition
+  if behavior.connect_to_logistic_network then
+    condition = behavior.logistic_condition
+  elseif behavior.circuit_enable_disable then
+    condition = behavior.circuit_condition
   end
-
-  local circuit_condition = behavior.connect_to_logistic_network and behavior.logistic_condition or behavior.circuit_condition
-  if circuit_condition then
-    local condition = circuit_condition.condition
+  if condition then
     if condition.comparator == "=" then
       local first_signal = condition.first_signal
-      if first_signal then
-        if first_signal.name == self.item then
-          local count
-          if condition.second_signal and condition.second_signal.name then
-            count = self.circuit_writer.get_merged_signal(condition.second_signal)
-          else
-            count = condition.constant or 0
-          end
-          self.circuit_limit = count
-          --self:say("Set limit "..count)
-          return
+      if first_signal and first_signal.name == self.item and (first_signal.quality or util.normal_quality) == self.quality then
+        local count
+        if condition.second_signal and condition.second_signal.name then
+          -- get_merged_signal was removed - read both wires and add them together instead.
+          count = self.entity.get_signal(condition.second_signal, defines.wire_connector_id.circuit_red, defines.wire_connector_id.circuit_green)
+        else
+          count = condition.constant or 0
         end
+        self.circuit_limit = count
+        return
       end
-    end
-    if circuit_condition.fulfilled then
-      self.circuit_limit = nil
-      --self:say("Depot enabled")
-      return
     end
   end
 
-  --If there is a writer with no conditions, we just disable the depot.
-  self.circuit_limit = 0
-  --self:say("Depot disabled")
+  self.circuit_limit = behavior.disabled and 0 or nil
 
 end
 
 local min = math.min
 function request_depot:dispatch_drone(depot, count)
 
-  local drone = self.transport_drone.new(self, self.item)
-  drone:pickup_from_supply(depot, self.item, count)
+  local drone = self.transport_drone.new(self)
+  -- new() returns nil when the drone entity couldn't be created at all. Bail out instead of
+  -- dereferencing it; make_request only books the supply against this depot once dispatch
+  -- actually succeeded.
+  if not drone then return end
+
+  drone:pickup_from_supply(depot, self.quality, self.item, count)
   self:remove_fuel(fuel_amount_per_drone)
 
   self.drones[drone.index] = drone
 
   self:update_sticker()
+  return true
 end
 
 local valid_item_cache = {}
@@ -517,7 +528,7 @@ local is_valid_item = function(item_name)
   if bool ~= nil then
     return bool
   end
-  valid_item_cache[item_name] = game.item_prototypes[item_name] ~= nil
+  valid_item_cache[item_name] = prototypes.item[item_name] ~= nil
   return valid_item_cache[item_name]
 end
 
@@ -527,15 +538,15 @@ local is_valid_fluid = function(fluid_name)
   if bool ~= nil then
     return bool
   end
-  valid_fluid_cache[fluid_name] = game.fluid_prototypes[fluid_name] ~= nil
+  valid_fluid_cache[fluid_name] = prototypes.fluid[fluid_name] ~= nil
   return valid_fluid_cache[fluid_name]
 end
 
-function request_depot:take_item(name, count, temperature)
+function request_depot:take_item(quality, name, count, temperature)
   if not count then error("NO COUMT?") end
 
   if self.mode == request_mode.item and is_valid_item(name) then
-    self.entity.get_output_inventory().insert({name = name, count = count})
+    self.entity.get_output_inventory().insert({name = name, count = count, quality = quality})
     return
   end
 
@@ -557,7 +568,7 @@ end
 function request_depot:remove_drone(drone, remove_item)
   self.drones[drone.index] = nil
   if remove_item then
-    self:get_drone_inventory().remove{name = "transport-drone", count = 1}
+    self:get_drone_inventory().remove{name = "transport-drone", count = 1, quality = util.normal_quality}
   end
   self:update_sticker()
 end
@@ -565,15 +576,15 @@ end
 function request_depot:update_sticker()
 
   if not self.item then
-    if self.rendering and rendering.is_valid(self.rendering) then
-      rendering.destroy(self.rendering)
+    if self.rendering and self.rendering.valid then
+      self.rendering.destroy()
       self.rendering = nil
     end
     return
   end
 
-  if self.rendering and rendering.is_valid(self.rendering) then
-    rendering.set_text(self.rendering, self:get_active_drone_count().."/"..self:get_drone_item_count())
+  if self.rendering and self.rendering.valid then
+    self.rendering.text = self:get_active_drone_count().."/"..self:get_drone_item_count()
     return
   end
 
@@ -592,7 +603,7 @@ function request_depot:update_sticker()
 end
 
 function request_depot:say(string)
-  self.entity.surface.create_entity{name = "tutorial-flying-text", position = self.entity.position, text = string}
+  util.say(self.entity, string)
 end
 
 function request_depot:add_to_network()
@@ -606,12 +617,25 @@ end
 
 function request_depot:on_removed()
   self:suicide_all_drones()
-  self.corpse.destroy()
+  -- The corpse is a real entity that other things can destroy (and on_removed can run twice in
+  -- some teardown orders), so never assume it's still there - destroy() on an invalid LuaEntity
+  -- errors.
+  if self.corpse and self.corpse.valid then
+    self.corpse.destroy()
+  end
 end
 
 function request_depot:on_config_changed()
   self:set_request_mode()
+  -- item and mode have to stay consistent: with no mode, get_stack_size() (and so
+  -- get_request_size()) has nothing to size with. check_request_change reconciles them, but it
+  -- only runs when this depot's update bucket next comes round - up to a full update interval
+  -- later - and the GUI's own refresh reads get_request_size() every 60 ticks in the meantime.
+  if not self.mode then
+    self.item = nil
+  end
+  self.quality = self.quality or util.normal_quality
   self.fuel_on_the_way = self.fuel_on_the_way or 0
 end
 
-return request_depot
+return request_depot

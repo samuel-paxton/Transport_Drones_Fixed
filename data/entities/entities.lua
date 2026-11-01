@@ -1,7 +1,7 @@
 local require = function(name) return require("data/entities/"..name) end
 
 require("transport_depot/transport_depot")
-require("transport_depot_circuits/transport_depot_circuits")
+require("transport_depot/miniature_depots")
 
 
 
@@ -18,7 +18,6 @@ local item =
   subgroup = "transport-drones",
   order = "e-"..name,
   stack_size = 10,
-  --place_result = name
 }
 
 local recipe =
@@ -26,16 +25,16 @@ local recipe =
   type = "recipe",
   name = name,
   localised_name = {name},
-  --category = "transport",
   enabled = false,
+  allow_quality = false,
   ingredients =
   {
-    {"engine-unit", 1},
-    {"steel-plate", 5},
-    {"iron-gear-wheel", 5},
+    {type = "item", name = "engine-unit", amount = 1},
+    {type = "item", name = "steel-plate", amount = 5},
+    {type = "item", name = "iron-gear-wheel", amount = 5},
   },
   energy_required = 2,
-  result = name
+  results = {{type = "item", name = name, amount = 1}}
 }
 
 data:extend{item, recipe}

@@ -4,40 +4,39 @@ supply_depot.metatable = {__index = supply_depot}
 
 supply_depot.corpse_offsets =
 {
-  [0] = {0, -2},
-  [2] = {2, 0},
-  [4] = {0, 2},
-  [6] = {-2, 0},
+  [defines.direction.north] = {0, -2},
+  [defines.direction.east] = {2, 0},
+  [defines.direction.south] = {0, 2},
+  [defines.direction.west] = {-2, 0},
 }
 
-local get_corpse_position = function(entity)
+local get_corpse_position = function(entity, corpse_offsets)
 
   local position = entity.position
   local direction = entity.direction
-  local offset = supply_depot.corpse_offsets[direction]
+  local offset = corpse_offsets[direction]
   return {position.x + offset[1], position.y + offset[2]}
 
 end
 
-function supply_depot.new(entity, tags)
-  local position = entity.position
-  local force = entity.force
-  local surface = entity.surface
-  entity.destructible = false
-  entity.minable = false
+-- Supply depot used to be two overlapping entities (an inert assembling-machine placeholder for
+-- visuals/circuit, plus a "supply-depot-chest" container underneath doing the actual storage) -
+-- containers now support custom pictures/circuit connectors directly, so it's just the one real
+-- entity. That also means it can no longer be circuit-disabled - plain containers don't support
+-- circuit_condition/enable-disable at all, only reading contents - so a supply depot always
+-- offers its stock to the network; only request/buffer depots are circuit-gateable now.
+local new_depot = function(lib, entity, tags)
+
   entity.rotatable = false
-  entity.active = false
-  local chest = surface.create_entity{name = "supply-depot-chest", position = position, force = force, player = entity.last_user}
 
   local depot =
   {
-    entity = chest,
-    assembler = entity,
+    entity = entity,
     to_be_taken = {},
-    index = tostring(chest.unit_number),
+    index = tostring(entity.unit_number),
     old_contents = {}
   }
-  setmetatable(depot, supply_depot.metatable)
+  setmetatable(depot, lib.metatable)
 
   depot:get_corpse()
   depot:read_tags(tags)
@@ -46,12 +45,28 @@ function supply_depot.new(entity, tags)
 
 end
 
+function supply_depot.new(entity, tags)
+  return new_depot(supply_depot, entity, tags)
+end
+
+-- A depot sharing all of this behaviour but with a different footprint, so a different road node
+-- offset (the miniature depots). Its depots get the variant's own metatable, so on_load finds the
+-- right corpse_offsets again through the entity name.
+function supply_depot.make_variant(corpse_offsets)
+  local variant = setmetatable({corpse_offsets = corpse_offsets}, {__index = supply_depot})
+  variant.metatable = {__index = variant}
+  variant.new = function(entity, tags)
+    return new_depot(variant, entity, tags)
+  end
+  return variant
+end
+
 function supply_depot:get_corpse()
   if self.corpse and self.corpse.valid then
     return self.corpse
   end
 
-  local corpse_position = get_corpse_position(self.assembler)
+  local corpse_position = get_corpse_position(self.entity, self.corpse_offsets)
   local corpse = self.entity.surface.create_entity{name = "transport-caution-corpse", position = corpse_position}
   corpse.corpse_expires = false
   self.corpse = corpse
@@ -77,57 +92,30 @@ function supply_depot:save_to_blueprint_tags()
   }
 end
 
-function supply_depot:get_to_be_taken(name)
-  return self.to_be_taken[name] or 0
+function supply_depot:get_to_be_taken(quality, name)
+  return util.get_quality_item(self.to_be_taken, quality, name) or 0
 end
 
 function supply_depot:update_contents()
   local supply = self.road_network.get_network_item_supply(self.network_id)
+  if not supply then return end
 
-  local new_contents
-  if (self.circuit_writer and self.circuit_writer.valid) then
-    local behavior = self.circuit_writer.get_control_behavior()
-    if behavior and behavior.disabled then
-      new_contents = {}
-    end
-  end
+  local new_contents = util.contents_to_dict(self.entity.get_output_inventory().get_contents())
 
-  if not new_contents then
-    new_contents = self.entity.get_output_inventory().get_contents()
-  end
+  util.for_each_quality_item(self.old_contents, function(quality, name, count)
+    if not util.get_quality_item(new_contents, quality, name) then
+      util.set_network_supply(supply, quality, name, self.index, nil)
+    end
+  end)
 
-  for name, count in pairs (self.old_contents) do
-    if not new_contents[name] then
-      local item_supply = supply[name]
-      if item_supply then
-        item_supply[self.index] = nil
-      end
-    end
-  end
-
-  for name, count in pairs (new_contents) do
-    local item_supply = supply[name]
-    if not item_supply then
-      item_supply = {}
-      supply[name] = item_supply
-    end
-    local new_count = count - self:get_to_be_taken(name)
-    if new_count > 0 then
-      item_supply[self.index] = new_count
-    else
-      item_supply[self.index] = nil
-    end
-  end
+  util.for_each_quality_item(new_contents, function(quality, name, count)
+    local new_count = count - self:get_to_be_taken(quality, name)
+    util.set_network_supply(supply, quality, name, self.index, new_count > 0 and new_count or nil)
+  end)
 
   self.old_contents = new_contents
 
 end
-
---[[
-
-had iron 10
-now iron 5
-]]
 
 function supply_depot:update()
   self:update_contents()
@@ -135,23 +123,21 @@ function supply_depot:update()
 end
 
 function supply_depot:say(string)
-  self.entity.surface.create_entity{name = "tutorial-flying-text", position = self.entity.position, text = string}
+  util.say(self.entity, string)
 end
 
-function supply_depot:give_item(requested_name, requested_count)
+function supply_depot:give_item(quality, requested_name, requested_count)
   local inventory = self.entity.get_output_inventory()
-  local removed_count = inventory.remove({name = requested_name, count = requested_count})
+  local removed_count = inventory.remove({name = requested_name, count = requested_count, quality = quality})
   return removed_count
 end
 
-function supply_depot:add_to_be_taken(name, count)
-  --if not (name and count) then return end
-  self.to_be_taken[name] = (self.to_be_taken[name] or 0) + count
-  --self:say(name.." - "..self.to_be_taken[name]..": "..count)
+function supply_depot:add_to_be_taken(quality, name, count)
+  util.add_quality_item(self.to_be_taken, quality, name, count)
 end
 
-function supply_depot:get_available_item_count(name)
-  return self.entity.get_output_inventory().get_item_count(name) - self:get_to_be_taken(name)
+function supply_depot:get_available_item_count(quality, name)
+  return self.entity.get_output_inventory().get_item_count{name = name, quality = quality} - self:get_to_be_taken(quality, name)
 end
 
 function supply_depot:add_to_network()
@@ -165,25 +151,16 @@ function supply_depot:remove_from_network()
 end
 
 function supply_depot:on_removed(event)
-
-  self.corpse.destroy()
-
-  if self.assembler.valid then
-    self.assembler.destructible = true
-    if event.name == defines.events.on_entity_died then
-      self.assembler.die()
-    else
-      self.assembler.destroy()
-    end
-  end
-
-  if self.entity.valid then
-    self.entity.destroy()
+  if self.corpse and self.corpse.valid then
+    self.corpse.destroy()
   end
 end
 
 function supply_depot:on_config_changed()
-  self.old_contents = self.old_contents or {}
+  -- Reset unconditionally: contents/to_be_taken used to be flat [name] = count tables before
+  -- quality support; they're now [quality][name] = count. Rebuilt from scratch on next update().
+  self.to_be_taken = {}
+  self.old_contents = {}
 end
 
 return supply_depot

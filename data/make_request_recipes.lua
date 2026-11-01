@@ -1,3 +1,37 @@
+local function get_prototype(base_type, name)
+  for type_name in pairs(defines.prototypes[base_type]) do
+    local prototypes = data.raw[type_name]
+    if prototypes and prototypes[name] then
+      return prototypes[name]
+    end
+  end
+end
+
+local function get_item_localised_name(name)
+  local item = get_prototype("item", name)
+  if not item then return end
+  if item.localised_name then
+    return item.localised_name
+  end
+  local prototype
+  local type_name = "item"
+  if item.place_result then
+    prototype = get_prototype("entity", item.place_result)
+    type_name = "entity"
+  elseif item.place_as_equipment_result then
+    prototype = get_prototype("equipment", item.place_as_equipment_result)
+    type_name = "equipment"
+  elseif item.place_as_tile then
+    -- Tiles with variations don't have a localised name
+    local tile_prototype = data.raw.tile[item.place_as_tile.result]
+    if tile_prototype and tile_prototype.localised_name then
+      prototype = tile_prototype
+      type_name = "tile"
+    end
+  end
+  return prototype and prototype.localised_name or {type_name.."-name."..name}
+end
+
 local fuel = settings.startup["fuel-fluid"].value
 if not data.raw.fluid[fuel] then
   log("Bad name for fuel fluid. reverting to something else...")
@@ -41,7 +75,9 @@ local make_recipe = function(item)
   if not item.name then
     return
   end
-  if util.has_flag(item, "hidden") then return end
+  if item.hidden or util.has_flag(item, "hidden") then return end
+  -- Blueprint-parameter placeholders ("parameter-0" etc) are real prototypes but not real goods.
+  if item.parameter then return end
   local max_stack = 65000
   if util.has_flag(item, "not-stackable") or item.type == "armor" then
     max_stack = 1
@@ -50,12 +86,16 @@ local make_recipe = function(item)
   {
     type = "recipe",
     name = "request-"..item.name,
+    localised_name = {"request-item", get_item_localised_name(item.name)},
     icon = item.dark_background_icon or item.icon,
     icon_size = item.icon_size,
     icons = item.icons,
     ingredients =
     {
-      {type = "item", name = "transport-drone", amount = 1},
+      -- The drone consumed to run this request is always normal quality (a drone doesn't get
+      -- "better" at flying by being epic) regardless of which quality the recipe/output is set
+      -- to - quality_min/quality_max pin it independently of the recipe's own quality selection.
+      {type = "item", name = "transport-drone", amount = 1, quality_min = "normal", quality_max = "normal"},
       {type = "fluid", name = fuel, amount = 5000}
     },
     results =
@@ -68,16 +108,20 @@ local make_recipe = function(item)
       {type = "item", name = item.name, amount = max_stack, show_details_in_recipe_tooltip = false},
       {type = "item", name = item.name, amount = max_stack, show_details_in_recipe_tooltip = false},
     },
-    category = category,
+    categories = {category},
     order = item.order,
     subgroup = get_subgroup(item),
     overload_multiplier = 100,
     hide_from_player_crafting = true,
+    hidden_in_factoriopedia = true,
     main_product = item.name,
     allow_decomposition = false,
     allow_as_intermediate = false,
     allow_intermediates = true,
     allow_inserter_overload = false,
+    -- The requested item's quality is exactly what the player picks here - the network will
+    -- look for a supply of the matching quality.
+    can_set_quality = true,
     energy_required = 2 ^ 50
   }
   data:extend{recipe}
@@ -108,7 +152,7 @@ local make_fluid_depot_recipe = function(fluid)
       results =
       {
       },
-      category = "transport-fluid-request",
+      categories = {"transport-fluid-request"},
       order = fluid.order,
       subgroup = fluid.subgroup or "fluid", --get_subgroup(item),
       overload_multiplier = 1,
@@ -117,6 +161,7 @@ local make_fluid_depot_recipe = function(fluid)
       allow_decomposition = false,
       allow_as_intermediate = false,
       allow_intermediates = false,
+      allow_quality = false,
       enabled = true,
       energy_required = 2 ^ 50
     }
@@ -129,6 +174,7 @@ local make_fluid_request_recipe = function(fluid)
   {
     type = "recipe",
     name = "request-"..fluid.name,
+    localised_name = {"request-item", fluid.localised_name or "__FLUID__"..fluid.name.."__"},
     icon = fluid.icon,
     icon_size = fluid.icon_size,
     icons = fluid.icons,
@@ -141,23 +187,30 @@ local make_fluid_request_recipe = function(fluid)
     {
       {type = "fluid", name = fluid.name, amount = 1000000, show_details_in_recipe_tooltip = false}
     },
-    category = category,
+    categories = {category},
     order = fluid.order,
     subgroup = fluid.subgroup or "fluid",
     overload_multiplier = 200,
     hide_from_player_crafting = true,
+    hidden_in_factoriopedia = true,
     main_product = fluid.name,
     allow_decomposition = false,
     allow_as_intermediate = false,
     allow_intermediates = false,
+    -- Fluids don't have quality, so there's nothing for a quality selector to do here; this also
+    -- keeps the drone ingredient pinned to normal quality (same as the item requests above).
+    can_set_quality = false,
     energy_required = 2 ^ 50
   }
   data:extend{recipe}
 end
 
 for k, fluid in pairs (data.raw.fluid) do
-  make_fluid_depot_recipe(fluid)
-  make_fluid_request_recipe(fluid)
+  -- Skip blueprint-parameter placeholder fluids, same as the item side above.
+  if not fluid.parameter then
+    make_fluid_depot_recipe(fluid)
+    make_fluid_request_recipe(fluid)
+  end
 end
 
 local fuel_recipe =
@@ -165,24 +218,23 @@ local fuel_recipe =
   type = "recipe",
   name = "fuel-depots",
   localised_name = {"fuel-depots"},
-  flags = {"hidden"},
   icon = util.path("data/entities/transport_depot/fuel-recipe-icon.png"),
   icon_size = 64,
-  --category = "transport",
   enabled = true,
   ingredients =
   {
     {type = "item", name = "transport-drone", amount = 100},
     {type = "fluid", name = fuel, amount = 5000}
   },
-  overload_multipler = 50,
+  overload_multiplier = 50,
+  allow_quality = false,
   energy_required = 5,
   results =
   {
     {type = "fluid", name = fuel, amount = 10}
   },
   subgroup = "other",
-  category = "fuel-depot",
+  categories = {"fuel-depot"},
   hidden = true
 }
 

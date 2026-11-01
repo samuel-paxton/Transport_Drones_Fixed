@@ -30,12 +30,22 @@ end
 
 add_depot_lib("request-depot", require("script/depots/request_depot"))
 add_depot_lib("supply-depot", require("script/depots/supply_depot"))
-add_depot_lib("supply-depot-chest", require("script/depots/supply_depot"))
 add_depot_lib("fuel-depot", require("script/depots/fuel_depot"))
 add_depot_lib("mining-depot", require("script/depots/mining_depot"))
 add_depot_lib("fluid-depot", require("script/depots/fluid_depot"))
 add_depot_lib("buffer-depot", require("script/depots/buffer_depot"))
 add_depot_lib("road-network-reader", require("script/depots/network_reader"))
+
+-- The miniature depots only differ in footprint: 1x1, so the road node sits one tile off the side.
+local mini_corpse_offsets =
+{
+  [defines.direction.north] = {0, -1},
+  [defines.direction.east] = {1, 0},
+  [defines.direction.south] = {0, 1},
+  [defines.direction.west] = {-1, 0},
+}
+add_depot_lib("mini-request-depot", require("script/depots/request_depot").make_variant(mini_corpse_offsets))
+add_depot_lib("mini-supply-depot", require("script/depots/supply_depot").make_variant(mini_corpse_offsets))
 
 local match = "transport_drones_add_"
 for name, setting in pairs (settings.startup) do
@@ -78,7 +88,7 @@ local mineable_tiles
 local is_tile_mineable = function(name)
   if not mineable_tiles then
     mineable_tiles = {}
-    for _, tile in pairs (game.tile_prototypes) do
+    for _, tile in pairs (prototypes.tile) do
       if tile.mineable_properties and tile.mineable_properties.minable then
         mineable_tiles[tile.name] = true
       end
@@ -104,7 +114,7 @@ local attempt_to_place_node = function(entity, depot_lib)
   end
 
   local tiles = { {name = "transport-drone-road", position = node_position} }
-  surface.set_tiles(tiles, false, "abort_on_collision", false, true)
+  surface.set_tiles(tiles, true, "abort_on_collision", false, true)
 
   if road_network.get_node(surface.index, node_position[1], node_position[2]) then
     return true
@@ -133,9 +143,15 @@ local add_depot_to_node = function(depot)
   local node = road_network.get_node(depot.surface_index, depot.node_position[1], depot.node_position[2])
 
   if not node then
+    -- Drop it from the registry *before* destroying the entity: the entity is registered with
+    -- script.register_on_object_destroyed, so destroying it raises on_object_destroyed, which
+    -- would otherwise find the depot still listed and tear it down a second time (double
+    -- on_removed - suiciding already-dead drones, destroying an already-destroyed corpse).
+    script_data.depots[depot.index] = nil
     depot:on_removed({})
-    depot.entity.destroy()
-    --log("Wtf, depot with no node... killing it"..serpent.line(depot))
+    if depot.entity.valid then
+      depot.entity.destroy()
+    end
     return true
   end
   node.depots = node.depots or {}
@@ -174,87 +190,11 @@ local add_to_update_bucket = function(index)
   best_bucket[best_count + 1] = index
 end
 
-local circuit_offsets =
-{
-  [0] = {0, 1},
-  [2] = {-1, 0},
-  [4] = {0, -1},
-  [6] = {1, 0},
-}
-
-local circuit_writer_built = function(entity)
-  local offset = circuit_offsets[entity.direction]
-  if not offset then error("HEUK") end
-  local search_position = entity.position
-  search_position.x = search_position.x + offset[1]
-  search_position.y = search_position.y + offset[2]
-
-  entity.rotatable = false
-
-  for k, found_entity in pairs (entity.surface.find_entities_filtered{position = search_position}) do
-    local this_depot = get_depot(found_entity)
-    if this_depot then
-      if not (this_depot.circuit_writer and this_depot.circuit_writer.valid) then
-        this_depot.circuit_writer = entity
-        this_depot:say("Circuit writer attached")
-        return
-      end
-    end
-  end
-end
-
-local circuit_reader_built = function(entity)
-  local offset = circuit_offsets[entity.direction]
-  if not offset then error("HEUK") end
-  local search_position = entity.position
-  search_position.x = search_position.x + offset[1]
-  search_position.y = search_position.y + offset[2]
-
-  entity.rotatable = false
-
-  local attached = false
-
-  for k, found_entity in pairs (entity.surface.find_entities_filtered{position = search_position}) do
-    local this_depot = get_depot(found_entity)
-    if this_depot then
-      if not (this_depot.circuit_reader and this_depot.circuit_reader.valid) then
-        this_depot.circuit_reader = entity
-        this_depot:say("Circuit reader attached")
-        attached = true
-        break
-      end
-    end
-  end
-
-  if attached then
-    rendering.draw_sprite
-    {
-      sprite = "utility/fluid_indication_arrow",
-      surface = entity.surface,
-      only_in_alt_mode = true,
-      target = entity,
-      target_offset = {offset[1] / 2, offset[2] / 2},
-      orientation_target = entity
-    }
-  end
-
-end
-
 local on_created_entity = function(event)
   local entity = event.entity or event.created_entity
   if not (entity and entity.valid) then return end
 
   local name = entity.name
-
-  if name == "transport-depot-writer" then
-    circuit_writer_built(entity)
-    return
-  end
-
-  if name == "transport-depot-reader" then
-    circuit_reader_built(entity)
-    return
-  end
 
   local depot_lib = depot_libs[name]
   if not depot_lib then
@@ -269,7 +209,7 @@ local on_created_entity = function(event)
   end
 
   local depot = depot_lib.new(entity, event.tags)
-  script.register_on_entity_destroyed(entity)
+  script.register_on_object_destroyed(entity)
   depot.surface_index = entity.surface.index
   script_data.depots[depot.index] = depot
   if add_depot_to_node(depot) then
@@ -278,14 +218,18 @@ local on_created_entity = function(event)
   depot:add_to_network()
   add_to_update_bucket(depot.index)
 
-  for k, entity in pairs (entity.surface.find_entities_filtered{name = "transport-depot-writer", radius = entity.get_radius() + 1, position = entity.position}) do
-    circuit_writer_built(entity)
-  end
+end
 
-  for k, entity in pairs (entity.surface.find_entities_filtered{name = "transport-depot-reader", radius = entity.get_radius() + 1, position = entity.position}) do
-    circuit_reader_built(entity)
-  end
-
+-- Entity cloning (e.g. Space Exploration moving a spaceship) copies the entity but none of this
+-- mod's bookkeeping - the clone would be a permanently inert depot. Register it like a fresh
+-- build; attempt_to_place_node lays a road node under its corpse position if the destination
+-- doesn't have one.
+local on_entity_cloned = function(event)
+  local destination = event.destination
+  if not (destination and destination.valid) then return end
+  if not depot_libs[destination.name] then return end
+  if get_depot(destination) then return end
+  on_created_entity({entity = destination})
 end
 
 local remove_depot = function(depot, event)
@@ -311,7 +255,7 @@ local on_entity_removed = function(event)
 end
 
 local on_entity_destroyed = function(event)
-  local unit_number = event.unit_number
+  local unit_number = event.useful_id
   if not unit_number then return end
 
   local depot = get_depot_by_index(tostring(unit_number))
@@ -348,6 +292,13 @@ local update_depots = function(tick)
     if not depot_index then return end
     local depot = depots[depot_index]
     if not (depot and depot.entity.valid) then
+      if depot then
+        -- Fallback for a depot whose entity vanished without any removal event reaching us: a
+        -- full teardown, not just dropping the registry entry - otherwise it stays behind in its
+        -- road node's and network's depot lists, and e.g. get_depots_by_distance would later hand
+        -- it to a fuel dispatch that dereferences the invalid entity.
+        remove_depot(depot, {})
+      end
       depots[depot_index] = nil
       local last = #update_list
       if k == last then
@@ -397,7 +348,6 @@ local refresh_update_rate = function()
   if script_data.update_rate == update_rate then return end
   script_data.update_rate = update_rate
   refresh_update_buckets()
-  --game.print(script_data.update_rate)
 end
 
 local on_runtime_mod_setting_changed = function(event)
@@ -414,18 +364,7 @@ local picker_dolly_blacklist = function()
 
 end
 
-local get_tags = function(blueprint_entity, surface)
-  local name = blueprint_entity.name
-  local lib = depot_libs[name]
-  if not lib then return end
-
-  if name == "supply-depot" then
-    name = "supply-depot-chest"
-  end
-
-  local entity = surface.find_entity(name, blueprint_entity.position)
-  if not entity then return end
-
+local get_entity_tags = function(entity)
   local depot = get_depot(entity)
   if not depot then return end
 
@@ -433,6 +372,17 @@ local get_tags = function(blueprint_entity, surface)
   if not saver then return end
 
   return saver(depot)
+end
+
+local get_tags = function(blueprint_entity, surface)
+  local name = blueprint_entity.name
+  local lib = depot_libs[name]
+  if not lib then return end
+
+  local entity = surface.find_entity(name, blueprint_entity.position)
+  if not entity then return end
+
+  return get_entity_tags(entity)
 end
 
 
@@ -451,8 +401,20 @@ local on_player_setup_blueprint = function(event)
 
   local surface = player.surface
 
+  -- event.mapping (blueprint index -> source entity) is the authoritative link; the blueprint
+  -- entities' own positions aren't guaranteed to be world coordinates, so position-based lookup
+  -- only remains as a fallback for callers that can't provide a mapping (e.g. the self test
+  -- invoking this handler directly with a synthetic event).
+  local mapping = event.mapping and event.mapping.valid and event.mapping.get()
+
   for index, blueprint_entity in pairs(entities) do
-    local tags = get_tags(blueprint_entity, surface)
+    local tags
+    local source = mapping and mapping[index]
+    if source and source.valid and depot_libs[source.name] then
+      tags = get_entity_tags(source)
+    else
+      tags = get_tags(blueprint_entity, surface)
+    end
     if tags then
       item.set_blueprint_entity_tag(index, "transport_depot_tags", tags)
     end
@@ -461,18 +423,24 @@ end
 
 local lib = {}
 
+-- Exposed for script/self_test.lua: on_player_setup_blueprint only ever reads event.player_index
+-- (everything else comes off player.cursor_stack/blueprint_to_setup), and it can't be raised
+-- through script.raise_event, so the test calls it directly with a synthetic event.
+lib.on_player_setup_blueprint = on_player_setup_blueprint
+
 lib.events =
 {
   [defines.events.on_built_entity] = on_created_entity,
   [defines.events.on_robot_built_entity] = on_created_entity,
   [defines.events.script_raised_built] = on_created_entity,
   [defines.events.script_raised_revive] = on_created_entity,
+  [defines.events.on_entity_cloned] = on_entity_cloned,
 
   [defines.events.on_entity_died] = on_entity_removed,
   [defines.events.on_robot_mined_entity] = on_entity_removed,
   [defines.events.script_raised_destroy] = on_entity_removed,
   [defines.events.on_player_mined_entity] = on_entity_removed,
-  [defines.events.on_entity_destroyed] = on_entity_destroyed,
+  [defines.events.on_object_destroyed] = on_entity_destroyed,
 
   [defines.events.on_player_setup_blueprint] = on_player_setup_blueprint,
 
@@ -481,14 +449,14 @@ lib.events =
 }
 
 lib.on_init = function()
-  global.transport_depots = global.transport_depots or script_data
+  storage.transport_depots = storage.transport_depots or script_data
   setup_lib_values()
   refresh_update_rate()
   picker_dolly_blacklist()
 end
 
 lib.on_load = function()
-  script_data = global.transport_depots or script_data
+  script_data = storage.transport_depots or script_data
   setup_lib_values()
   for k, depot in pairs (script_data.depots) do
     load_depot(depot)
@@ -499,13 +467,13 @@ end
 
 lib.on_configuration_changed = function()
 
-  global.transport_depots = global.transport_depots or script_data
+  storage.transport_depots = storage.transport_depots or script_data
 
   for k, depot in pairs (script_data.depots) do
     if not depot.entity.valid then
       script_data.depots[k] = nil
     else
-      script.register_on_entity_destroyed(depot.entity)
+      script.register_on_object_destroyed(depot.entity)
       depot.surface_index = depot.entity.surface.index
       if depot.on_config_changed then
         depot:on_config_changed()

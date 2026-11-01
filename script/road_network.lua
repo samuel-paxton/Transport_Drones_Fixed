@@ -20,12 +20,26 @@ local new_id = function()
     item_supply = {},
     depots = {}
   }
-  --print("New network "..id)
   return id
 end
 
+-- A node can outlive the network entry its id points at: clear_network() re-homes the depots it
+-- knows about and then drops the entry, but any node still carrying that id (which happens when a
+-- network's nodes got disconnected without the id split being detected) would afterwards resolve
+-- to nothing, and every caller here dereferences the result. Rebuild the entry on demand instead
+-- so a stale id self-heals into an empty network rather than crashing the depot update loop.
 local get_network_by_id = function(id)
-  return script_data.networks[id]
+  if not id then return end
+  local network = script_data.networks[id]
+  if not network then
+    network =
+    {
+      item_supply = {},
+      depots = {}
+    }
+    script_data.networks[id] = network
+  end
+  return network
 end
 
 local neighbor_offsets =
@@ -139,7 +153,6 @@ local symmetric_connection_check = function(surface, x1, y1, x2, y2)
 
     local node, node_position = next(new_nodes_1)
     if not node then break end
-    --game.surfaces[surface].create_entity{name = "flying-text", position = {node_position[1], node_position[2]}, text = "A"}
     new_nodes_1[node] = nil
     for k, offset in pairs (neighbor_offsets) do
       local nx, ny = node_position[1] + offset[1], node_position[2] + offset[2]
@@ -157,7 +170,6 @@ local symmetric_connection_check = function(surface, x1, y1, x2, y2)
 
     local node, node_position = next(new_nodes_2)
     if not node then break end
-    --game.surfaces[surface].create_entity{name = "flying-text", position = {node_position[1], node_position[2]}, text = "B"}
     new_nodes_2[node] = nil
     for k, offset in pairs (neighbor_offsets) do
       local nx, ny = node_position[1] + offset[1], node_position[2] + offset[2]
@@ -207,7 +219,6 @@ local accumulate_smaller_node = function(surface, x1, y1, x2, y2)
 
     local node, node_position = next(new_nodes_1)
     if not node then return nodes_1 end
-    --game.surfaces[surface].create_entity{name = "flying-text", position = {node_position[1], node_position[2]}, text = "A"}
     new_nodes_1[node] = nil
     for k, offset in pairs (neighbor_offsets) do
       local nx, ny = node_position[1] + offset[1], node_position[2] + offset[2]
@@ -222,7 +233,6 @@ local accumulate_smaller_node = function(surface, x1, y1, x2, y2)
 
     local node, node_position = next(new_nodes_2)
     if not node then return nodes_2 end
-    --game.surfaces[surface].create_entity{name = "flying-text", position = {node_position[1], node_position[2]}, text = "B"}
     new_nodes_2[node] = nil
     for k, offset in pairs (neighbor_offsets) do
       local nx, ny = node_position[1] + offset[1], node_position[2] + offset[2]
@@ -254,11 +264,7 @@ end
 
 local set_node_ids = function(nodes, id)
 
-  --print("Setting nodes "..id)
-
   for node, bool in pairs (nodes) do
-    --local node_position = debug_get_node_postion(node)
-    --game.surfaces[node_position.surface].create_entity{name = "flying-text", position = {node_position.x, node_position.y}, text = id}
 
     node.id = id
 
@@ -277,15 +283,18 @@ end
 
 
 local clear_network = function(id)
-  --print("Clearing "..id)
   local network = script_data.networks[id]
 
-  --if not network then return end
+  if not network then return end
 
   for category, depots in pairs (network.depots) do
     for id, depot in pairs (depots) do
       depot:remove_from_network()
-      depot:add_to_network()
+      -- Same guard as set_node_ids: the depot's entity can already be gone (e.g. its surface is
+      -- being deleted), and add_to_network dereferences entity.surface.
+      if depot.entity.valid then
+        depot:add_to_network()
+      end
     end
   end
 
@@ -295,14 +304,19 @@ end
 
 local road_network = {}
 
+-- network.item_supply is indexed [quality][name][depot_index] = count - quality first, since
+-- normal quality is the overwhelmingly common case and this keeps that a single sub-table
+-- lookup rather than something every name lookup has to unpack.
 road_network.get_network_item_supply = function(id)
   local network = get_network_by_id(id)
-  return network.item_supply
+  return network and network.item_supply
 end
 
-road_network.get_supply_depots = function(id, name)
+road_network.get_supply_depots = function(id, name, quality)
   local network = get_network_by_id(id)
-  return network.item_supply[name]
+  if not network then return end
+  local by_quality = network.item_supply[quality or util.normal_quality]
+  return by_quality and by_quality[name]
 end
 
 road_network.add_node = function(surface, x, y)
@@ -377,8 +391,6 @@ road_network.remove_node = function(surface, x, y)
   local node = get_node(surface, x, y)
   if not node then return end
 
-  --print("Removing node "..serpent.line({node.id, x, y}))
-
   if node.depots and next(node.depots) then
     return true
   end
@@ -386,8 +398,6 @@ road_network.remove_node = function(surface, x, y)
   script_data.node_map[surface][x][y] = nil
 
   local count = get_neighbor_count(surface, x, y)
-
-  --game.surfaces[surface].create_entity{name = "flying-text", position = {x, y}, text = count}
 
   if count == 0 then
     -- No neighbors, clear the network.
@@ -445,6 +455,10 @@ road_network.add_depot = function(depot, category)
   local x, y = depot.node_position[1], depot.node_position[2]
   local surface = depot.entity.surface.index
   local node = get_node(surface, x, y)
+  -- Every caller is supposed to have placed/confirmed the node first (see depot_common's
+  -- attempt_to_place_node / add_depot_to_node), but a depot can be re-added mid-teardown while
+  -- another mod is ripping tiles out from under it - leave it network-less rather than crashing.
+  if not node then return end
 
   local network = get_network_by_id(node.id)
 
@@ -455,10 +469,6 @@ road_network.add_depot = function(depot, category)
 end
 
 road_network.remove_depot = function(depot, category)
-  --local x, y = depot.node_position[1], depot.node_position[2]
-  --local surface = depot.entity.surface.index
-  --local node = get_node(surface, x, y)
-  --local network = get_network_by_id(node.id)
 
   local network_id = depot.network_id
   if not network_id then return end
@@ -468,11 +478,13 @@ road_network.remove_depot = function(depot, category)
 
   if depot.old_contents then
     local item_supply = network.item_supply
-    for name, count in pairs (depot.old_contents) do
-      if item_supply[name] then
-        item_supply[name][depot.index] = nil
+    util.for_each_quality_item(depot.old_contents, function(quality, name, count)
+      local by_quality = item_supply[quality]
+      local by_name = by_quality and by_quality[name]
+      if by_name then
+        by_name[depot.index] = nil
       end
-    end
+    end)
   end
 
   if network.depots[category] then
@@ -500,33 +512,13 @@ local rect_distance = function(a, b)
 end
 local sort = table.sort
 
-local prune_networks = function()
-  local valid = {}
-  for index, surface_map in pairs(script_data.node_map) do
-    for x, y_map in pairs (surface_map) do
-      for y, id in pairs (y_map) do
-        if not valid[id] then
-          valid[id] = true
-        end
-      end
-    end
-  end
-
-  for id, network in pairs (script_data.networks) do
-    if not valid[id] then
-      clear_network(id)
-    end
-  end
-
-end
-
 local floor = math.floor
 
 local get_tiles = function()
-  local mask = game.tile_prototypes["transport-drone-road"].collision_mask
+  local mask = prototypes.tile["transport-drone-road"].collision_mask.layers
   local tiles = {}
-  for name, tile in pairs (game.tile_prototypes) do
-    local tile_mask = tile.collision_mask or {}
+  for name, tile in pairs (prototypes.tile) do
+    local tile_mask = (tile.collision_mask and tile.collision_mask.layers) or {}
     if table_size(tile_mask) == table_size(mask) then
       local good = true
       for layer, bool in pairs (mask) do
@@ -545,7 +537,7 @@ end
 
 local reset = function()
 
-  local profiler = game.create_profiler()
+  local profiler = helpers.create_profiler()
 
   script_data.node_map = {}
   script_data.networks = {}
@@ -604,6 +596,9 @@ road_network.check_clear_lonely_node = function(surface, x, y)
   end
 
   local surface = game.surfaces[surface]
+  -- The surface can already be gone: depot teardown reaches here via on_object_destroyed, which
+  -- also fires while a surface (and everything on it) is being deleted.
+  if not surface then return end
   local position = {x, y}
 
   local hidden = surface.get_hidden_tile(position)
@@ -619,12 +614,46 @@ road_network.check_clear_lonely_node = function(surface, x, y)
 
 end
 
+-- A surface being deleted (or cleared) takes its road tiles with it without any tile events, so
+-- the node map for it has to be dropped by hand, along with any networks made of those nodes -
+-- networks never span surfaces, so every network referenced by a node here is entirely gone.
+local clear_surface = function(surface_index)
+  local surface_map = script_data.node_map[surface_index]
+  if not surface_map then return end
+  script_data.node_map[surface_index] = nil
+
+  local cleared = {}
+  for x, x_map in pairs (surface_map) do
+    for y, node in pairs (x_map) do
+      local id = node.id
+      if id and not cleared[id] then
+        cleared[id] = true
+        clear_network(id)
+      end
+    end
+  end
+end
+
+local on_surface_deleted = function(event)
+  clear_surface(event.surface_index)
+end
+
+local on_surface_cleared = function(event)
+  clear_surface(event.surface_index)
+end
+
+road_network.events =
+{
+  [defines.events.on_surface_deleted] = on_surface_deleted,
+  [defines.events.on_surface_cleared] = on_surface_cleared,
+}
+
 road_network.on_init = function()
-  global.road_network = global.road_network or script_data
+  storage.road_network = storage.road_network or script_data
 end
 
 road_network.on_load = function()
-  script_data = global.road_network or script_data
+  script_data = storage.road_network or script_data
 end
 
 road_network.on_configuration_changed = function()
