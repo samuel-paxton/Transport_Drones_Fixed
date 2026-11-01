@@ -61,10 +61,8 @@ function fluid_depot:get_to_be_taken(name)
 end
 
 function fluid_depot:get_output_fluidbox()
-  local ok, has_segment = pcall(self.entity.has_fluid_segment, 1)
-  if not (ok and has_segment) then return end
-  local ok2, fluid = pcall(self.entity.get_fluid_segment_fluid, 1)
-  if not ok2 then return end
+  local ok, fluid = pcall(self.entity.get_fluid, 1)
+  if not ok then return end
   return fluid
 end
 
@@ -112,6 +110,8 @@ function fluid_depot:update()
 
   local box = self:get_output_fluidbox()
   if not box then
+    -- Still has to run while empty, or the depot keeps offering what it last held.
+    self:update_contents()
     if not self.entity.active then
       self.entity.disabled_by_script = false
       self.entity.crafting_progress = 0
